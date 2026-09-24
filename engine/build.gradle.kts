@@ -1,5 +1,6 @@
 plugins {
     alias(libs.plugins.kotlin.jvm)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 // Android（minSdk 26）からも使う純 Kotlin モジュール。Android に依存しないので PC 上でテスト・試聴できる
@@ -15,6 +16,7 @@ kotlin {
 }
 
 dependencies {
+    implementation(libs.kotlinx.serialization.json)
     testImplementation(libs.junit)
 }
 

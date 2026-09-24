@@ -18,21 +18,33 @@ fun interface JourneySource {
     fun snapshot(audioElapsedSeconds: Double): JourneySnapshot
 }
 
+/** 路線図に描くための旅程の見取り図。 */
+interface JourneyPlan : JourneySource {
+    val route: Route
+    /** 各駅に着くときの進み具合 p（先頭は 0、終点は 1）。 */
+    val stationProgress: List<Double>
+    /** 地下区間（p の範囲）。 */
+    val undergroundRanges: List<ClosedFloatingPointRange<Double>>
+}
+
 /**
  * 開発用のデモ再生（SPEC 8章）。18 分のルートを 3 分に縮め、位置は時刻表どおりに擬似的に進める。
  */
 class DemoJourney(
-    val route: Route,
+    override val route: Route,
     /** 各駅の到着時刻（ルート上の分）。 */
     val stationMinutes: List<Double>,
     /** 地下区間（p の範囲）。 */
     val undergroundRange: ClosedFloatingPointRange<Double>,
     val playbackMinutes: Double,
-) : JourneySource {
+) : JourneyPlan {
 
     init {
         require(stationMinutes.size == route.stations.size)
     }
+
+    override val stationProgress: List<Double> = stationMinutes.map { it / route.expectedMinutes }
+    override val undergroundRanges: List<ClosedFloatingPointRange<Double>> = listOf(undergroundRange)
 
     /** ルート上の時間の進む速さ（再生 1 秒あたりのルート秒）。 */
     val timeScale: Double get() = route.expectedMinutes / playbackMinutes

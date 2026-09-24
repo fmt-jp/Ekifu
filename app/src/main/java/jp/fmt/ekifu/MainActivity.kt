@@ -9,6 +9,12 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import jp.fmt.ekifu.data.RouteRepository
+import jp.fmt.ekifu.ui.RouteEditScreen
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
@@ -30,22 +36,39 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val playback = PlaybackController.get(this)
+        val routes = RouteRepository.get(this)
         setContent {
             EkifuTheme {
-                PlayerScreen(
-                    playback = playback,
-                    connected = mediaController != null,
-                    onPlayPause = { playing ->
-                        mediaController?.let { if (playing) it.pause() else startPlayback(it) }
-                    },
-                    onRestart = {
-                        mediaController?.let {
-                            requestNotificationPermission()
-                            it.seekToDefaultPosition()
-                        }
-                    },
-                    onModeChange = { playback.setMode(it) },
-                )
+                var editing by rememberSaveable { mutableStateOf(false) }
+                // 開くたびに保存済みのルートから編集をやり直す（前回の下書きを持ち越さない）
+                var editSession by rememberSaveable { mutableIntStateOf(0) }
+                val storedRoute by routes.route.collectAsStateWithLifecycle()
+                if (editing) {
+                    RouteEditScreen(
+                        onClose = { editing = false },
+                        viewModel = viewModel(key = "route-edit-$editSession"),
+                    )
+                } else {
+                    PlayerScreen(
+                        playback = playback,
+                        storedRoute = storedRoute,
+                        connected = mediaController != null,
+                        onPlayPause = { playing ->
+                            mediaController?.let { if (playing) it.pause() else startPlayback(it) }
+                        },
+                        onRestart = {
+                            mediaController?.let {
+                                requestNotificationPermission()
+                                it.seekToDefaultPosition()
+                            }
+                        },
+                        onModeChange = { playback.setMode(it) },
+                        onEditRoute = {
+                            editSession++
+                            editing = true
+                        },
+                    )
+                }
             }
         }
     }

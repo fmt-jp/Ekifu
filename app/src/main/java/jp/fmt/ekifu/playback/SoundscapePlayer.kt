@@ -30,7 +30,12 @@ class SoundscapePlayer(
 
     override fun getState(): SimpleBasePlayer.State {
         val s = controller.state.value
-        val stations = controller.journey.route.stations
+        val plan = s.plan
+        val builder = SimpleBasePlayer.State.Builder().setAvailableCommands(COMMANDS)
+        // 再生できるルートがないときは空のプレイリスト（通知にも出さない）
+        if (plan == null) return builder.setPlaybackState(Player.STATE_IDLE).build()
+
+        val stations = plan.route.stations
         val metadata = MediaMetadata.Builder()
             .setTitle(TITLE)
             .setArtist("${stations.first().name} → ${stations.last().name}")
@@ -46,8 +51,7 @@ class SoundscapePlayer(
             else -> Player.STATE_IDLE
         }
         val positionMs = ((s.status?.audioElapsedSeconds ?: 0.0) * 1000).toLong()
-        return SimpleBasePlayer.State.Builder()
-            .setAvailableCommands(COMMANDS)
+        return builder
             .setPlayWhenReady(s.playing, Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST)
             .setPlaybackState(playbackState)
             .setPlaylist(listOf(item))

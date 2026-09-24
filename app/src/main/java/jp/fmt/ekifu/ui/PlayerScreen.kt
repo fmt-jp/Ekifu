@@ -1,6 +1,7 @@
 package jp.fmt.ekifu.ui
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,10 +20,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -38,10 +39,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import jp.fmt.ekifu.engine.DemoJourney
+import jp.fmt.ekifu.data.StoredRoute
+import jp.fmt.ekifu.engine.JourneyPlan
 import jp.fmt.ekifu.engine.EngineStatus
 import jp.fmt.ekifu.engine.Phase
-import jp.fmt.ekifu.playback.DemoMode
+import jp.fmt.ekifu.playback.PlaybackMode
 import jp.fmt.ekifu.playback.PlaybackController
 import jp.fmt.ekifu.playback.PlaybackState
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -51,16 +53,18 @@ import kotlin.math.roundToInt
 @Composable
 fun PlayerScreen(
     playback: PlaybackController,
+    storedRoute: StoredRoute,
     connected: Boolean,
     onPlayPause: (playing: Boolean) -> Unit,
     onRestart: () -> Unit,
-    onModeChange: (DemoMode) -> Unit,
+    onModeChange: (PlaybackMode) -> Unit,
+    onEditRoute: () -> Unit,
 ) {
     // 画面が見えていない間は集めない（画面オフ中は UI の更新を止める）
     val state by playback.state.collectAsStateWithLifecycle()
     var showDebug by rememberSaveable { mutableStateOf(false) }
     val colors = LocalRouteColors.current
-    val journey = playback.journey
+    val plan = state.plan
 
     Surface(color = colors.background, contentColor = colors.text, modifier = Modifier.fillMaxSize()) {
         Column(
@@ -71,10 +75,34 @@ fun PlayerScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text("通勤のサウンドスケープ", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text(journey.route.name, style = MaterialTheme.typography.bodyMedium)
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                for (mode in DemoMode.entries) {
+            if (state.mode == PlaybackMode.REGISTERED && plan == null) {
+                // ルート未登録（読み込み中は何も出さない）
+                if (storedRoute == StoredRoute.None) {
+                    Spacer(Modifier.height(24.dp))
+                    Button(onClick = onEditRoute, modifier = Modifier.fillMaxWidth()) {
+                        Text("通勤ルートを登録する")
+                    }
+                    TextButton(onClick = { onModeChange(PlaybackMode.DEMO_SHORT) }) {
+                        Text("開発用：デモ再生")
+                    }
+                }
+                return@Column
+            }
+            if (plan == null) return@Column
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(plan.route.name, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                if (state.mode == PlaybackMode.REGISTERED) {
+                    TextButton(onClick = onEditRoute) { Text("ルートを編集") }
+                }
+            }
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+            ) {
+                for (mode in PlaybackMode.entries) {
                     FilterChip(
                         selected = state.mode == mode,
                         onClick = { onModeChange(mode) },
@@ -83,13 +111,19 @@ fun PlayerScreen(
                 }
             }
 
-            RouteMap(journey, state.status)
+            RouteMap(plan, state.status)
 
-            StatusPanel(journey, state.status)
+            StatusPanel(plan, state.status)
 
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(enabled = connected, onClick = { onPlayPause(state.playing) }) {
-                    Text(if (state.playing) "一時停止" else "デモ再生")
+                    Text(
+                        when {
+                            state.playing -> "一時停止"
+                            state.mode == PlaybackMode.REGISTERED -> "再生"
+                            else -> "デモ再生"
+                        },
+                    )
                 }
                 OutlinedButton(enabled = connected, onClick = onRestart) {
                     Text("最初から")
@@ -108,11 +142,11 @@ fun PlayerScreen(
 
 /** 縦の路線図：駅、地下区間の帯、現在地の点。 */
 @Composable
-private fun RouteMap(demo: DemoJourney, status: EngineStatus?) {
+private fun RouteMap(plan: JourneyPlan, status: EngineStatus?) {
     val colors = LocalRouteColors.current
     val textMeasurer = rememberTextMeasurer()
-    val stations = demo.route.stations
-    val fractions = remember(demo) { demo.stationMinutes.map { it / demo.route.expectedMinutes } }
+    val stations = plan.route.stations
+    val fractions = plan.stationProgress
     val labelStyle = TextStyle(color = colors.text, fontSize = 16.sp)
     val bandLabelStyle = TextStyle(color = colors.text.copy(alpha = 0.6f), fontSize = 12.sp)
     val progress = status?.journey?.progress?.coerceIn(0.0, 1.0)
@@ -128,22 +162,25 @@ private fun RouteMap(demo: DemoJourney, status: EngineStatus?) {
         val bottom = size.height - 20.dp.toPx()
         fun yFor(p: Double): Float {
             val i = fractions.indexOfLast { it <= p }.coerceIn(0, fractions.size - 2)
-            val local = ((p - fractions[i]) / (fractions[i + 1] - fractions[i])).coerceIn(0.0, 1.0)
+            val span = fractions[i + 1] - fractions[i]
+            val local = if (span > 0) ((p - fractions[i]) / span).coerceIn(0.0, 1.0) else 0.0
             val step = (bottom - top) / (fractions.size - 1)
             return top + step * (i + local.toFloat())
         }
 
         // 地下区間の帯
-        val bandTop = yFor(demo.undergroundRange.start)
-        val bandBottom = yFor(demo.undergroundRange.endInclusive)
-        drawRoundRect(
-            color = colors.undergroundBand,
-            topLeft = Offset(lineX - 18.dp.toPx(), bandTop),
-            size = Size(size.width - lineX + 18.dp.toPx(), bandBottom - bandTop),
-            cornerRadius = CornerRadius(12.dp.toPx()),
-        )
         val bandLabel = textMeasurer.measure("地下", bandLabelStyle)
-        drawText(bandLabel, topLeft = Offset(size.width - bandLabel.size.width - 12.dp.toPx(), bandTop + 6.dp.toPx()))
+        for (range in plan.undergroundRanges) {
+            val bandTop = yFor(range.start)
+            val bandBottom = yFor(range.endInclusive)
+            drawRoundRect(
+                color = colors.undergroundBand,
+                topLeft = Offset(lineX - 18.dp.toPx(), bandTop),
+                size = Size(size.width - lineX + 18.dp.toPx(), bandBottom - bandTop),
+                cornerRadius = CornerRadius(12.dp.toPx()),
+            )
+            drawText(bandLabel, topLeft = Offset(size.width - bandLabel.size.width - 12.dp.toPx(), bandTop + 6.dp.toPx()))
+        }
 
         drawLine(colors.line, Offset(lineX, top), Offset(lineX, bottom), strokeWidth = 8.dp.toPx())
 
@@ -165,11 +202,11 @@ private fun RouteMap(demo: DemoJourney, status: EngineStatus?) {
 }
 
 @Composable
-private fun StatusPanel(demo: DemoJourney, status: EngineStatus?) {
+private fun StatusPanel(plan: JourneyPlan, status: EngineStatus?) {
     val journey = status?.journey
     val phase = status?.phase ?: Phase.DEPARTURE
     val elapsed = journey?.routeElapsedSeconds ?: 0.0
-    val remaining = journey?.remainingSeconds ?: demo.route.expectedMinutes * 60
+    val remaining = journey?.remainingSeconds ?: plan.route.expectedMinutes * 60
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(
             "経過 ${formatTime(elapsed)}　到着まで ${formatTime(remaining)}",
@@ -182,7 +219,7 @@ private fun StatusPanel(demo: DemoJourney, status: EngineStatus?) {
         val underground = (status?.undergroundMix ?: 0.0) >= 0.5
         Text(if (underground) "地下を走行中" else "地上を走行中", style = MaterialTheme.typography.bodyMedium)
         val lastIndex = journey?.lastPassedStationIndex ?: -1
-        val lastName = demo.route.stations.getOrNull(lastIndex)?.name
+        val lastName = plan.route.stations.getOrNull(lastIndex)?.name
         Text("直前に鳴った駅：${lastName ?: "—"}", style = MaterialTheme.typography.bodyMedium)
     }
 }
