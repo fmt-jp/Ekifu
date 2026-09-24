@@ -33,6 +33,18 @@ class Composer(seed: Int) {
     var arrived = false
         private set
 
+    /** 別の作曲器の状態をそのまま写す（チャンクの作り直し用）。 */
+    fun copyFrom(other: Composer) {
+        rng.copyFrom(other.rng)
+        activePhase = other.activePhase
+        progressionIndex = other.progressionIndex
+        currentChord = other.currentChord
+        lastMelodyNote = other.lastMelodyNote
+        lastMotif = other.lastMotif
+        melodyRestUntilBeat = other.melodyRestUntilBeat
+        arrived = other.arrived
+    }
+
     fun composeBeat(beat: Long, ctx: BeatContext): List<NoteEvent> {
         if (arrived) return emptyList()
         val events = mutableListOf<NoteEvent>()

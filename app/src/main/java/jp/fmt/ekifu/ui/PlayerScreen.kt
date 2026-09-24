@@ -13,14 +13,13 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -32,7 +31,6 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontFamily
@@ -43,21 +41,26 @@ import androidx.compose.ui.unit.sp
 import jp.fmt.ekifu.engine.DemoJourney
 import jp.fmt.ekifu.engine.EngineStatus
 import jp.fmt.ekifu.engine.Phase
+import jp.fmt.ekifu.playback.DemoMode
+import jp.fmt.ekifu.playback.PlaybackController
+import jp.fmt.ekifu.playback.PlaybackState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.util.Locale
 import kotlin.math.roundToInt
 
 @Composable
-fun PlayerScreen(viewModel: PlayerViewModel) {
-    val state by viewModel.player.state.collectAsState()
+fun PlayerScreen(
+    playback: PlaybackController,
+    connected: Boolean,
+    onPlayPause: (playing: Boolean) -> Unit,
+    onRestart: () -> Unit,
+    onModeChange: (DemoMode) -> Unit,
+) {
+    // 画面が見えていない間は集めない（画面オフ中は UI の更新を止める）
+    val state by playback.state.collectAsStateWithLifecycle()
     var showDebug by rememberSaveable { mutableStateOf(false) }
     val colors = LocalRouteColors.current
-
-    // 段階1は画面オンでの再生のみ。再生中は画面を消さない
-    val view = LocalView.current
-    DisposableEffect(state.playing) {
-        view.keepScreenOn = state.playing
-        onDispose { view.keepScreenOn = false }
-    }
+    val journey = playback.journey
 
     Surface(color = colors.background, contentColor = colors.text, modifier = Modifier.fillMaxSize()) {
         Column(
@@ -68,17 +71,27 @@ fun PlayerScreen(viewModel: PlayerViewModel) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text("通勤のサウンドスケープ", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text(viewModel.demo.route.name, style = MaterialTheme.typography.bodyMedium)
+            Text(journey.route.name, style = MaterialTheme.typography.bodyMedium)
 
-            RouteMap(viewModel.demo, state.status)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                for (mode in DemoMode.entries) {
+                    FilterChip(
+                        selected = state.mode == mode,
+                        onClick = { onModeChange(mode) },
+                        label = { Text(mode.label) },
+                    )
+                }
+            }
 
-            StatusPanel(viewModel.demo, state.status)
+            RouteMap(journey, state.status)
+
+            StatusPanel(journey, state.status)
 
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Button(onClick = { if (state.playing) viewModel.player.pause() else viewModel.player.play() }) {
+                Button(enabled = connected, onClick = { onPlayPause(state.playing) }) {
                     Text(if (state.playing) "一時停止" else "デモ再生")
                 }
-                OutlinedButton(onClick = { viewModel.player.restart() }) {
+                OutlinedButton(enabled = connected, onClick = onRestart) {
                     Text("最初から")
                 }
             }
@@ -88,7 +101,7 @@ fun PlayerScreen(viewModel: PlayerViewModel) {
                 Spacer(Modifier.padding(4.dp))
                 Text("デバッグ表示", style = MaterialTheme.typography.bodyMedium)
             }
-            if (showDebug) DebugPanel(state.status)
+            if (showDebug) DebugPanel(state)
         }
     }
 }
@@ -175,11 +188,14 @@ private fun StatusPanel(demo: DemoJourney, status: EngineStatus?) {
 }
 
 @Composable
-private fun DebugPanel(status: EngineStatus?) {
+private fun DebugPanel(state: PlaybackState) {
+    val status = state.status
     val text = if (status == null) {
         "未再生"
     } else {
         listOf(
+            "バッファ残量 = %.1f 秒".format(Locale.US, state.bufferedSeconds),
+            "バッファ不足 = ${state.underruns} 回",
             "p = %.3f".format(Locale.US, status.journey.progress),
             "phase = ${status.phase}",
             "underground = ${status.journey.underground} (mix %.2f)".format(Locale.US, status.undergroundMix),

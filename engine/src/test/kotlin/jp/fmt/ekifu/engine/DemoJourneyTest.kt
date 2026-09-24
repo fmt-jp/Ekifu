@@ -31,4 +31,12 @@ class DemoJourneyTest {
         assertTrue(demo.snapshot(180 * 0.71).underground)
         assertFalse(demo.snapshot(180 * 0.73).underground)
     }
+
+    @Test
+    fun longDemoTakesThirtyMinutes() {
+        val long = DemoJourney.create(DemoJourney.LONG_PLAYBACK_MINUTES)
+        assertEquals(0.5, long.snapshot(15 * 60.0).progress, 1e-9)
+        assertEquals(1, long.snapshot(5 * 60.0).lastPassedStationIndex)
+        assertEquals(1.0, long.snapshot(30 * 60.0).progress, 1e-9)
+    }
 }

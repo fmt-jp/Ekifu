@@ -22,6 +22,8 @@ data class EngineStatus(
     val phase: Phase,
     /** 地上 0 〜 地下 1 のなめらかな値。 */
     val undergroundMix: Double,
+    /** いま鳴っている和音。 */
+    val chord: Chord,
     val finished: Boolean,
 )
 
@@ -31,9 +33,9 @@ data class EngineStatus(
  * 任意の長さに区切って [render] しても音はつながる。
  */
 class SoundEngine(
-    route: Route,
+    private val route: Route,
     private val journey: JourneySource,
-    seed: Int,
+    private val seed: Int,
     private val sampleRate: Int = C.SAMPLE_RATE,
 ) {
     private val composer = Composer(seed)
@@ -45,7 +47,7 @@ class SoundEngine(
     private var lastPassedStation = -1
 
     private val pending = ArrayDeque<ScheduledNote>()
-    private val voices = ArrayList<Voice>()
+    private var voices = ArrayList<Voice>()
     private val bus = MixBus(C.CONTROL_BLOCK_FRAMES)
 
     private val delay = FeedbackDelay(sampleRate, C.DELAY_SECONDS, C.DELAY_FEEDBACK, C.DELAY_LOWPASS_HZ)
@@ -78,8 +80,36 @@ class SoundEngine(
             journey = lastSnapshot,
             phase = composer.activePhase ?: lastPhase,
             undergroundMix = undergroundMix,
+            chord = composer.currentChord,
             finished = finished,
         )
+
+    /**
+     * 今の状態をまるごと複製する。チャンクの先頭で取っておけば、
+     * 旅程の状態が変わったときにそこから合成し直せる。
+     */
+    fun copy(): SoundEngine = SoundEngine(route, journey, seed, sampleRate).also {
+        it.composer.copyFrom(composer)
+        it.samplePosition = samplePosition
+        it.nextBeat = nextBeat
+        it.lastPassedStation = lastPassedStation
+        it.pending.addAll(pending)
+        it.voices = voices.mapTo(ArrayList(voices.size)) { v -> v.copy() }
+        it.delay.copyFrom(delay)
+        it.reverb.copyFrom(reverb)
+        it.masterLowpassLeft.copyFrom(masterLowpassLeft)
+        it.masterLowpassRight.copyFrom(masterLowpassRight)
+        it.compressor.copyFrom(compressor)
+        it.undergroundTarget = undergroundTarget
+        it.undergroundMix = undergroundMix
+        it.reverbMix = reverbMix
+        it.fadeStartSample = fadeStartSample
+        it.lastSnapshot = lastSnapshot
+        it.lastPhase = lastPhase
+    }
+
+    /** 鳴っているパッドの複製（音切れのつなぎに使う）。 */
+    fun padVoiceCopies(): List<PadVoice> = voices.filterIsInstance<PadVoice>().map { it.copy() }
 
     /** ステレオ 16bit のインターリーブで [frames] フレーム書く。終了後は無音で埋める。 */
     fun render(out: ShortArray, offsetFrames: Int, frames: Int) {
@@ -89,7 +119,10 @@ class SoundEngine(
             // ブロックの区切りを絶対位置にそろえ、呼び出し側の区切り方で音が変わらないようにする
             val untilGrid = C.CONTROL_BLOCK_FRAMES - samplePosition % C.CONTROL_BLOCK_FRAMES
             val untilBeat = (beatSample(nextBeat) - samplePosition).coerceAtLeast(1L)
-            val block = minOf(untilGrid, (frames - done).toLong(), untilBeat).toInt()
+            // 音の出だしはサンプル単位で正確に（ブロックの区切り方に左右されないように）
+            val untilNote = pending.firstOrNull()?.let { it.startSample - samplePosition }
+                ?.takeIf { it > 0 } ?: Long.MAX_VALUE
+            val block = minOf(minOf(untilGrid, (frames - done).toLong()), minOf(untilBeat, untilNote)).toInt()
             renderBlock(out, (offsetFrames + done) * C.CHANNELS, block)
             done += block
         }
@@ -137,7 +170,7 @@ class SoundEngine(
 
     private fun renderBlock(out: ShortArray, outIndex: Int, frames: Int) {
         val blockEnd = samplePosition + frames
-        while (pending.isNotEmpty() && pending.first().startSample < blockEnd) {
+        while (pending.isNotEmpty() && pending.first().startSample <= samplePosition) {
             startVoice(pending.removeFirst().event)
         }
 

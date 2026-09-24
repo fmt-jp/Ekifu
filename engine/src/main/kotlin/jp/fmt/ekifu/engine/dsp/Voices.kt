@@ -37,6 +37,9 @@ abstract class Voice(pan: Double, private val gain: Double, private val delaySen
     var finished = false
         protected set
 
+    /** 状態ごと複製する（チャンクの作り直し用）。 */
+    abstract fun copy(): Voice
+
     /** 1 サンプル進めて、エンベロープ込みのモノラル値を返す。 */
     protected abstract fun next(): Double
 
@@ -53,17 +56,28 @@ abstract class Voice(pan: Double, private val gain: Double, private val delaySen
 }
 
 /** 立ち上がりは直線、ノートオフ後は指数で消えるエンベロープ。 */
-class AttackReleaseEnvelope(sampleRate: Int, attackSeconds: Double, releaseSeconds: Double, private val holdSamples: Long) {
+class AttackReleaseEnvelope(sampleRate: Int, attackSeconds: Double, releaseSeconds: Double, private var holdSamples: Long) {
     private val attackStep = 1.0 / (attackSeconds * sampleRate)
     private val releaseCoef = decayCoefficient(releaseSeconds, sampleRate)
     private var position = 0L
     private var level = 0.0
 
+    fun copyFrom(other: AttackReleaseEnvelope) {
+        holdSamples = other.holdSamples
+        position = other.position
+        level = other.level
+    }
+
+    /** 今の音量のまま鳴らし続ける（余韻中なら、その音量で止める）。 */
+    fun sustainForever() {
+        holdSamples = Long.MAX_VALUE
+    }
+
     val done: Boolean get() = position > holdSamples && level < C.VOICE_SILENCE
 
     fun next(): Double {
         if (position < holdSamples) {
-            if (level < 1.0) level = (level + attackStep).coerceAtMost(1.0)
+            if (level < 1.0 && holdSamples != Long.MAX_VALUE) level = (level + attackStep).coerceAtMost(1.0)
         } else {
             level *= releaseCoef
         }
@@ -75,7 +89,13 @@ class AttackReleaseEnvelope(sampleRate: Int, attackSeconds: Double, releaseSecon
 private fun triangle(phase: Double): Double = 4 * kotlin.math.abs(phase - 0.5) - 1
 
 /** パッド：三角波 2 本（±デチューン）→ ローパス。 */
-class PadVoice(sampleRate: Int, midi: Int, velocity: Double, pan: Double, holdSamples: Long) :
+class PadVoice(
+    private val sampleRate: Int,
+    private val midi: Int,
+    private val velocity: Double,
+    private val pan: Double,
+    private val holdSamples: Long,
+) :
     Voice(pan, C.PAD_GAIN * velocity, C.PAD_DELAY_SEND, C.PAD_REVERB_SEND) {
     private val baseHz = midiToHz(midi.toDouble())
     private val detune = 2.0.pow(C.PAD_DETUNE_CENTS / 1200)
@@ -85,6 +105,17 @@ class PadVoice(sampleRate: Int, midi: Int, velocity: Double, pan: Double, holdSa
     private var phase2 = 0.37 // 位相をずらしてうなりを自然に
     private val filter = BiquadLowpass(sampleRate).apply { set(C.PAD_LOWPASS_HZ, C.PAD_LOWPASS_Q) }
     private val envelope = AttackReleaseEnvelope(sampleRate, C.PAD_ATTACK_SECONDS, C.PAD_RELEASE_SECONDS, holdSamples)
+
+    override fun copy(): PadVoice = PadVoice(sampleRate, midi, velocity, pan, holdSamples).also {
+        it.finished = finished
+        it.phase1 = phase1
+        it.phase2 = phase2
+        it.filter.copyFrom(filter)
+        it.envelope.copyFrom(envelope)
+    }
+
+    /** 音切れのつなぎ用に、今の音量のまま伸ばす。 */
+    fun sustainForever() = envelope.sustainForever()
 
     override fun next(): Double {
         val raw = 0.5 * (triangle(phase1) + triangle(phase2))
@@ -97,11 +128,22 @@ class PadVoice(sampleRate: Int, midi: Int, velocity: Double, pan: Double, holdSa
 }
 
 /** ベース：サイン波、ゆっくり立ち上がる。 */
-class BassVoice(sampleRate: Int, midi: Int, velocity: Double, holdSamples: Long) :
+class BassVoice(
+    private val sampleRate: Int,
+    private val midi: Int,
+    private val velocity: Double,
+    private val holdSamples: Long,
+) :
     Voice(0.0, C.BASS_GAIN * velocity, C.BASS_DELAY_SEND, C.BASS_REVERB_SEND) {
     private val inc = midiToHz(midi.toDouble()) / sampleRate
     private var phase = 0.0
     private val envelope = AttackReleaseEnvelope(sampleRate, C.BASS_ATTACK_SECONDS, C.BASS_RELEASE_SECONDS, holdSamples)
+
+    override fun copy(): BassVoice = BassVoice(sampleRate, midi, velocity, holdSamples).also {
+        it.finished = finished
+        it.phase = phase
+        it.envelope.copyFrom(envelope)
+    }
 
     override fun next(): Double {
         val v = sin(2 * PI * phase) * envelope.next()
@@ -112,7 +154,12 @@ class BassVoice(sampleRate: Int, midi: Int, velocity: Double, holdSamples: Long)
 }
 
 /** プラック：三角波、指数減衰。 */
-class PluckVoice(sampleRate: Int, midi: Int, velocity: Double, pan: Double) :
+class PluckVoice(
+    private val sampleRate: Int,
+    private val midi: Int,
+    private val velocity: Double,
+    private val pan: Double,
+) :
     Voice(pan, C.PLUCK_GAIN * velocity, C.PLUCK_DELAY_SEND, C.PLUCK_REVERB_SEND) {
     private val inc = midiToHz(midi.toDouble()) / sampleRate
     private var phase = 0.0
@@ -120,6 +167,13 @@ class PluckVoice(sampleRate: Int, midi: Int, velocity: Double, pan: Double) :
     private val decay = decayCoefficient(C.PLUCK_DECAY_SECONDS, sampleRate)
     private var level = 1.0
     private var position = 0
+
+    override fun copy(): PluckVoice = PluckVoice(sampleRate, midi, velocity, pan).also {
+        it.finished = finished
+        it.phase = phase
+        it.level = level
+        it.position = position
+    }
 
     override fun next(): Double {
         val attack = if (position < attackSamples) position.toDouble() / attackSamples else 1.0
@@ -133,7 +187,12 @@ class PluckVoice(sampleRate: Int, midi: Int, velocity: Double, pan: Double) :
 }
 
 /** ベル：非整数倍音のサイン波を重ねる。 */
-class BellVoice(sampleRate: Int, midi: Int, velocity: Double, pan: Double) :
+class BellVoice(
+    private val sampleRate: Int,
+    private val midi: Int,
+    private val velocity: Double,
+    private val pan: Double,
+) :
     Voice(pan, C.BELL_GAIN * velocity, C.BELL_DELAY_SEND, C.BELL_REVERB_SEND) {
     private val partials = C.BELL_PARTIAL_RATIOS.size
     private val incs = DoubleArray(partials) { midiToHz(midi.toDouble()) * C.BELL_PARTIAL_RATIOS[it] / sampleRate }
@@ -142,6 +201,13 @@ class BellVoice(sampleRate: Int, midi: Int, velocity: Double, pan: Double) :
     private val decays = DoubleArray(partials) { decayCoefficient(C.BELL_PARTIAL_DECAY_SECONDS[it], sampleRate) }
     private val attackSamples = (C.BELL_ATTACK_SECONDS * sampleRate).toInt().coerceAtLeast(1)
     private var position = 0
+
+    override fun copy(): BellVoice = BellVoice(sampleRate, midi, velocity, pan).also {
+        it.finished = finished
+        phases.copyInto(it.phases)
+        levels.copyInto(it.levels)
+        it.position = position
+    }
 
     override fun next(): Double {
         val attack = if (position < attackSamples) position.toDouble() / attackSamples else 1.0

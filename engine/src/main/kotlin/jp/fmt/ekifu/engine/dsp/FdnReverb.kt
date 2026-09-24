@@ -22,6 +22,15 @@ class FdnReverb(sampleRate: Int, decaySeconds: Double, dampingHz: Double, privat
         }
     }
 
+    fun copyFrom(other: FdnReverb) {
+        for (i in 0 until LINE_COUNT) {
+            other.lines[i].copyInto(lines[i])
+            dampers[i].copyFrom(other.dampers[i])
+        }
+        other.indices.copyInto(indices)
+        diffusers.forEachIndexed { i, d -> d.copyFrom(other.diffusers[i]) }
+    }
+
     /** モノラル入力を処理して、左右の残響を [out] に書く。 */
     fun process(input: Double, out: DoubleArray) {
         var x = input
@@ -51,6 +60,11 @@ class FdnReverb(sampleRate: Int, decaySeconds: Double, dampingHz: Double, privat
     private class Allpass(length: Int, private val gain: Double) {
         private val buffer = DoubleArray(length.coerceAtLeast(1))
         private var index = 0
+
+        fun copyFrom(other: Allpass) {
+            other.buffer.copyInto(buffer)
+            index = other.index
+        }
 
         fun process(x: Double): Double {
             val delayed = buffer[index]

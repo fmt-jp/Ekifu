@@ -12,6 +12,10 @@ class Mulberry32(seed: Int) {
         return t xor (t ushr 14)
     }
 
+    fun copyFrom(other: Mulberry32) {
+        state = other.state
+    }
+
     /** [0, 1) の一様乱数。 */
     fun nextDouble(): Double = (nextInt().toLong() and 0xFFFFFFFFL) / 4_294_967_296.0
 

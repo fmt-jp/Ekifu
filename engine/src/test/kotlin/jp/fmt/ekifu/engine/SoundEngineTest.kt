@@ -45,7 +45,7 @@ class SoundEngineTest {
     @Test
     fun chunkSizeDoesNotChangeTheSound() {
         val a = renderDemo(seed = 5, chunkFrames = 4096)
-        val b = renderDemo(seed = 5, chunkFrames = 1000)
+        val b = renderDemo(seed = 5, chunkFrames = 777)
         val n = minOf(a.size, b.size)
         for (i in 0 until n) assertEquals("sample $i", a[i], b[i])
     }

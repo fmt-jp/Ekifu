@@ -55,7 +55,12 @@ class DemoJourney(
     companion object {
         private const val EPSILON = 1e-9
 
-        fun create(): DemoJourney {
+        /** 通常のデモ（3 分）。 */
+        const val SHORT_PLAYBACK_MINUTES = 3.0
+        /** 画面オフで長時間鳴らし続ける確認用（同じルートを 30 分かけて進む）。 */
+        const val LONG_PLAYBACK_MINUTES = 30.0
+
+        fun create(playbackMinutes: Double = SHORT_PLAYBACK_MINUTES): DemoJourney {
             val names = listOf("若葉台", "桜坂", "川辺", "中央", "港町", "丘の上", "汐見")
             val minutes = listOf(0.0, 3.0, 6.0, 9.0, 12.0, 15.0, 18.0)
             val range = 0.27..0.72
@@ -72,10 +77,10 @@ class DemoJourney(
                 )
             }
             return DemoJourney(
-                route = Route("デモ（18分→3分）", expected, stations),
+                route = Route("デモ（18分→${playbackMinutes.toInt()}分）", expected, stations),
                 stationMinutes = minutes,
                 undergroundRange = range,
-                playbackMinutes = 3.0,
+                playbackMinutes = playbackMinutes,
             )
         }
     }

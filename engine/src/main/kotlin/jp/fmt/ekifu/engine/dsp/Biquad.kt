@@ -28,6 +28,11 @@ class BiquadLowpass(private val sampleRate: Int) {
         a2 = (1 - alpha) / a0
     }
 
+    fun copyFrom(other: BiquadLowpass) {
+        b0 = other.b0; b1 = other.b1; b2 = other.b2; a1 = other.a1; a2 = other.a2
+        x1 = other.x1; x2 = other.x2; y1 = other.y1; y2 = other.y2
+    }
+
     fun process(x: Double): Double {
         val y = b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2
         x2 = x1
@@ -42,6 +47,10 @@ class BiquadLowpass(private val sampleRate: Int) {
 class OnePoleLowpass(sampleRate: Int, cutoffHz: Double) {
     private val coef = 1 - kotlin.math.exp(-2 * PI * cutoffHz / sampleRate)
     private var state = 0.0
+
+    fun copyFrom(other: OnePoleLowpass) {
+        state = other.state
+    }
 
     fun process(x: Double): Double {
         state += coef * (x - state)

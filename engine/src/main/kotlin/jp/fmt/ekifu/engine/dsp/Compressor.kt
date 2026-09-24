@@ -19,6 +19,10 @@ class Compressor(
     private val releaseCoef = exp(-1.0 / (releaseSeconds * sampleRate))
     private var envelope = 0.0
 
+    fun copyFrom(other: Compressor) {
+        envelope = other.envelope
+    }
+
     /** この 1 サンプルに掛けるゲインを返す。 */
     fun gainFor(left: Double, right: Double): Double {
         val level = max(abs(left), abs(right))
