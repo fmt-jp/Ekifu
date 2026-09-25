@@ -22,6 +22,7 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import jp.fmt.ekifu.playback.PlaybackController
+import jp.fmt.ekifu.playback.PlaybackMode
 import jp.fmt.ekifu.playback.PlaybackService
 import jp.fmt.ekifu.ui.EkifuTheme
 import jp.fmt.ekifu.ui.PlayerScreen
@@ -30,12 +31,20 @@ class MainActivity : ComponentActivity() {
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var mediaController by mutableStateOf<MediaController?>(null)
 
-    private val notificationPermission =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* 許可がなくても再生はできる */ }
+    private lateinit var playback: PlaybackController
+    /** 許可の確認が終わったら行う操作。 */
+    private var afterPermissions: (() -> Unit)? = null
+
+    // 許可がなくても再生はできる（通知が出ない、位置を使わない）ので、結果によらず続ける
+    private val permissionRequest =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+            afterPermissions?.invoke()
+            afterPermissions = null
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val playback = PlaybackController.get(this)
+        playback = PlaybackController.get(this)
         val routes = RouteRepository.get(this)
         setContent {
             EkifuTheme {
@@ -54,13 +63,19 @@ class MainActivity : ComponentActivity() {
                         storedRoute = storedRoute,
                         connected = mediaController != null,
                         onPlayPause = { playing ->
-                            mediaController?.let { if (playing) it.pause() else startPlayback(it) }
+                            mediaController?.let { controller ->
+                                if (playing) {
+                                    controller.pause()
+                                } else {
+                                    withPermissions {
+                                        controller.prepare()
+                                        controller.play()
+                                    }
+                                }
+                            }
                         },
                         onRestart = {
-                            mediaController?.let {
-                                requestNotificationPermission()
-                                it.seekToDefaultPosition()
-                            }
+                            mediaController?.let { controller -> withPermissions { controller.seekToDefaultPosition() } }
                         },
                         onModeChange = { playback.setMode(it) },
                         onEditRoute = {
@@ -89,19 +104,32 @@ class MainActivity : ComponentActivity() {
         super.onStop()
     }
 
-    private fun startPlayback(controller: MediaController) {
-        requestNotificationPermission()
-        controller.prepare()
-        controller.play()
-    }
-
-    /** Android 13 以上では、再生中の通知を出すために許可が要る。 */
-    private fun requestNotificationPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
-            PackageManager.PERMISSION_GRANTED
-        ) {
-            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+    /**
+     * 再生の前に必要な許可を求めてから [action] を行う。
+     * - 通知（Android 13 以上）：再生中の通知とロック画面の操作のため
+     * - 位置情報（ルートなしモードのみ）：アプリ使用中の許可で足りる（再生はボタン操作から始まるため）
+     */
+    private fun withPermissions(action: () -> Unit) {
+        val needed = buildList {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !granted(Manifest.permission.POST_NOTIFICATIONS)) {
+                add(Manifest.permission.POST_NOTIFICATIONS)
+            }
+            if (playback.state.value.mode == PlaybackMode.WANDER &&
+                !granted(Manifest.permission.ACCESS_FINE_LOCATION) &&
+                !granted(Manifest.permission.ACCESS_COARSE_LOCATION)
+            ) {
+                add(Manifest.permission.ACCESS_FINE_LOCATION)
+                add(Manifest.permission.ACCESS_COARSE_LOCATION)
+            }
+        }
+        if (needed.isEmpty()) {
+            action()
+        } else {
+            afterPermissions = action
+            permissionRequest.launch(needed.toTypedArray())
         }
     }
+
+    private fun granted(permission: String) =
+        ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
 }

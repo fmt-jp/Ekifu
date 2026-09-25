@@ -11,7 +11,7 @@ class SoundEngineTest {
 
     private fun renderDemo(seed: Int, chunkFrames: Int): ShortArray {
         val journey = DemoJourney.create()
-        val engine = SoundEngine(journey.route, journey, seed)
+        val engine = SoundEngine(journey, seed)
         val out = ArrayList<ShortArray>()
         val chunk = ShortArray(chunkFrames * C.CHANNELS)
         while (!engine.finished) {
@@ -79,5 +79,31 @@ class SoundEngineTest {
             sum += v * v
         }
         return sqrt(sum / count)
+    }
+
+    @Test
+    fun wanderModePlaysWithoutEndingAndRingsNewPlaces() {
+        val journey = WanderJourney { 12.0 }
+        val engine = SoundEngine(journey, seed = 3)
+        val chunk = ShortArray(C.SAMPLE_RATE * 10 * C.CHANNELS)
+        journey.onLocation(LocationSample(0, 35.681, 139.767, 20.0))
+        engine.render(chunk, 0, C.SAMPLE_RATE * 10)
+        assertEquals(0, engine.status.journey.landmark?.sequence)
+        // 乗り物で遠くへ → 道中フェーズに切り替わる
+        journey.onLocation(LocationSample(300_000, 35.73, 139.767, 20.0))
+        repeat(12) { engine.render(chunk, 0, C.SAMPLE_RATE * 10) }
+        assertEquals(Phase.MIDDLE, engine.status.phase)
+        assertEquals(1, engine.status.journey.landmark?.sequence)
+        assertTrue(!engine.finished)
+        assertTrue("still sounding", rms(chunk, 0, chunk.size) > 0.003)
+    }
+
+    @Test
+    fun nightTimeFiltersTheSound() {
+        val journey = WanderJourney { 0.0 }
+        val engine = SoundEngine(journey, seed = 3)
+        val chunk = ShortArray(C.SAMPLE_RATE * C.CHANNELS)
+        repeat(20) { engine.render(chunk, 0, C.SAMPLE_RATE) }
+        assertEquals(WanderJourney.darknessAt(0.0), engine.status.filterMix, 0.01)
     }
 }

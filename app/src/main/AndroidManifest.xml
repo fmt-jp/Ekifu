@@ -1,9 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- 画面オフでも再生を続けるフォアグラウンドサービス。位置情報の種別は段階4で追加する -->
+    <!-- 画面オフでも再生を続けるフォアグラウンドサービス（ルートなしモードでは位置も取る） -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <!-- ルートなしモード。アプリ使用中の許可で足りる（再生はボタン操作から始まるため） -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <!-- Android 13 以上で再生中の通知を出すため -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- 画面オフ中も合成スレッドを止めないため（再生中だけ保持） -->
@@ -31,7 +35,7 @@
         <service
             android:name=".playback.PlaybackService"
             android:exported="true"
-            android:foregroundServiceType="mediaPlayback">
+            android:foregroundServiceType="mediaPlayback|location">
             <intent-filter>
                 <action android:name="androidx.media3.session.MediaSessionService" />
             </intent-filter>

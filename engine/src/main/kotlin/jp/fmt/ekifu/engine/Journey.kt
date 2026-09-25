@@ -11,9 +11,35 @@ data class JourneySnapshot(
     val remainingSeconds: Double,
     /** 再生開始からのルート上の経過時間（秒）。 */
     val routeElapsedSeconds: Double,
+    /** 和音進行と発音の多さを決めるフェーズ。ルートがあるときは p から決まる。 */
+    val phase: Phase = Phase.fromProgress(progress),
+    /** 最後に着いた場所（駅や、ルートなしモードの区画）。変わったらそのモチーフを鳴らす。 */
+    val landmark: Landmark? = null,
+    /** 音のこもり具合 0〜1（時間帯による。地下のときは別に 1 になる）。 */
+    val darkness: Double = 0.0,
+    /** ルートなしモードの移動状態（ルートがあるときは null）。 */
+    val motion: Motion? = null,
 )
 
-/** 経過時間（再生した音の長さ）から旅程の状態を返す。段階4で位置連動版に差し替える。 */
+/**
+ * モチーフを鳴らす場所。[sequence] が増えたら新しく着いたとみなす。
+ * モチーフは [motifKey] から決まるので、同じ場所なら何度来ても同じメロディになる。
+ */
+data class Landmark(
+    val sequence: Int,
+    val name: String,
+    val motifKey: String,
+    /** 終点（モチーフを主音で終わらせる）。 */
+    val isTerminal: Boolean = false,
+)
+
+/** ルート上の [index] 番目の駅を場所として表す（まだどこも通過していなければ null）。 */
+fun Route.stationLandmark(index: Int): Landmark? {
+    val station = stations.getOrNull(index) ?: return null
+    return Landmark(index, station.name, station.name, isTerminal = index == stations.lastIndex)
+}
+
+/** 経過時間（再生した音の長さ）から旅程の状態を返す。 */
 fun interface JourneySource {
     fun snapshot(audioElapsedSeconds: Double): JourneySnapshot
 }
@@ -61,6 +87,7 @@ class DemoJourney(
             lastPassedStationIndex = lastPassed,
             remainingSeconds = (expectedSeconds - routeSeconds).coerceAtLeast(0.0),
             routeElapsedSeconds = routeSeconds,
+            landmark = route.stationLandmark(lastPassed),
         )
     }
 

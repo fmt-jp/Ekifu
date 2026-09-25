@@ -41,6 +41,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import jp.fmt.ekifu.data.StoredRoute
 import jp.fmt.ekifu.engine.JourneyPlan
+import jp.fmt.ekifu.engine.Motion
+import jp.fmt.ekifu.engine.WanderJourney
+import java.time.LocalTime
 import jp.fmt.ekifu.engine.EngineStatus
 import jp.fmt.ekifu.engine.Phase
 import jp.fmt.ekifu.playback.PlaybackMode
@@ -83,16 +86,23 @@ fun PlayerScreen(
                     Button(onClick = onEditRoute, modifier = Modifier.fillMaxWidth()) {
                         Text("通勤ルートを登録する")
                     }
+                    OutlinedButton(onClick = { onModeChange(PlaybackMode.WANDER) }, modifier = Modifier.fillMaxWidth()) {
+                        Text("ルートを決めずに再生する")
+                    }
                     TextButton(onClick = { onModeChange(PlaybackMode.DEMO_SHORT) }) {
                         Text("開発用：デモ再生")
                     }
                 }
                 return@Column
             }
-            if (plan == null) return@Column
+            if (!state.playable) return@Column
 
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(plan.route.name, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                Text(
+                    plan?.route?.name ?: "ルートなし：約 5 分ごとの位置から曲を作ります",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f),
+                )
                 if (state.mode == PlaybackMode.REGISTERED) {
                     TextButton(onClick = onEditRoute) { Text("ルートを編集") }
                 }
@@ -111,16 +121,19 @@ fun PlayerScreen(
                 }
             }
 
-            RouteMap(plan, state.status)
-
-            StatusPanel(plan, state.status)
+            if (plan != null) {
+                RouteMap(plan, state.status)
+                StatusPanel(plan, state.status)
+            } else {
+                WanderPanel(state)
+            }
 
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(enabled = connected, onClick = { onPlayPause(state.playing) }) {
                     Text(
                         when {
                             state.playing -> "一時停止"
-                            state.mode == PlaybackMode.REGISTERED -> "再生"
+                            state.mode == PlaybackMode.REGISTERED || state.mode == PlaybackMode.WANDER -> "再生"
                             else -> "デモ再生"
                         },
                     )
@@ -216,11 +229,48 @@ private fun StatusPanel(plan: JourneyPlan, status: EngineStatus?) {
             "${phaseName(phase)}　${phaseDescription(phase)}",
             style = MaterialTheme.typography.bodyLarge,
         )
-        val underground = (status?.undergroundMix ?: 0.0) >= 0.5
+        val underground = journey?.underground == true
         Text(if (underground) "地下を走行中" else "地上を走行中", style = MaterialTheme.typography.bodyMedium)
         val lastIndex = journey?.lastPassedStationIndex ?: -1
         val lastName = plan.route.stations.getOrNull(lastIndex)?.name
         Text("直前に鳴った駅：${lastName ?: "—"}", style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+/** ルートなしモードの表示：移動の様子、いまいる場所、時間帯、位置の更新。 */
+@Composable
+private fun WanderPanel(state: PlaybackState) {
+    val status = state.status
+    val journey = status?.journey
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("経過 ${formatTime(journey?.routeElapsedSeconds ?: 0.0)}", style = MaterialTheme.typography.titleMedium)
+        val motion = journey?.motion ?: Motion.STILL
+        Text(
+            "${motionName(motion)}　${motionDescription(motion)}",
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        val place = journey?.landmark?.name
+        Text(
+            when {
+                status == null -> "再生すると、いまいる場所から曲を作ります"
+                !state.locationEnabled -> "位置情報の許可がないため、場所と移動は使わずに鳴らしています"
+                place == null -> "位置を取得しています…"
+                else -> "いまいる場所：$place"
+            },
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        val hour = LocalTime.now().let { it.hour + it.minute / 60.0 }
+        Text(
+            "時間帯：${timeOfDayName(hour)}（音のこもり ${(WanderJourney.darknessAt(hour) * 100).roundToInt()}%）",
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        state.lastFixWallMillis?.let { fix ->
+            val minutes = ((System.currentTimeMillis() - fix) / 60_000).coerceAtLeast(0)
+            Text(
+                if (minutes == 0L) "位置の更新：たった今" else "位置の更新：$minutes 分前",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
     }
 }
 
@@ -235,7 +285,12 @@ private fun DebugPanel(state: PlaybackState) {
             "バッファ不足 = ${state.underruns} 回",
             "p = %.3f".format(Locale.US, status.journey.progress),
             "phase = ${status.phase}",
-            "underground = ${status.journey.underground} (mix %.2f)".format(Locale.US, status.undergroundMix),
+            "underground = ${status.journey.underground} / filter %.2f / darkness %.2f".format(
+                Locale.US,
+                status.filterMix,
+                status.journey.darkness,
+            ),
+            "motion = ${status.journey.motion} / landmark = ${status.journey.landmark?.sequence}",
             "音声の経過 = ${formatTime(status.audioElapsedSeconds)}",
             "finished = ${status.finished}",
         ).joinToString("\n")
@@ -248,6 +303,25 @@ private fun phaseName(phase: Phase) = when (phase) {
     Phase.MIDDLE -> "道中"
     Phase.PRE_ARRIVAL -> "到着前"
     Phase.ARRIVAL -> "到着"
+}
+
+private fun motionName(motion: Motion) = when (motion) {
+    Motion.STILL -> "止まっている"
+    Motion.WALK -> "歩いている"
+    Motion.RIDE -> "乗り物で移動中"
+}
+
+private fun motionDescription(motion: Motion) = when (motion) {
+    Motion.STILL -> "静かな和音で"
+    Motion.WALK -> "歩く速さの旋律で"
+    Motion.RIDE -> "景色が流れていく"
+}
+
+private fun timeOfDayName(hour: Double) = when {
+    hour >= 5 && hour < 10 -> "朝"
+    hour >= 10 && hour < 16 -> "昼"
+    hour >= 16 && hour < 19 -> "夕方"
+    else -> "夜"
 }
 
 private fun phaseDescription(phase: Phase) = when (phase) {

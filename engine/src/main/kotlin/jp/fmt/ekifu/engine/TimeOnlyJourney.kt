@@ -53,6 +53,7 @@ class TimeOnlyJourney(override val route: Route) : JourneyPlan {
             lastPassedStationIndex = lastPassed,
             remainingSeconds = (expectedSeconds - audioElapsedSeconds).coerceAtLeast(0.0),
             routeElapsedSeconds = audioElapsedSeconds,
+            landmark = route.stationLandmark(lastPassed),
         )
     }
 
@@ -61,11 +62,14 @@ class TimeOnlyJourney(override val route: Route) : JourneyPlan {
         private const val EARTH_RADIUS_METERS = 6_371_000.0
 
         /** 2 駅間の大円距離（メートル）。 */
-        fun distanceMeters(a: Station, b: Station): Double {
-            val lat1 = Math.toRadians(a.lat)
-            val lat2 = Math.toRadians(b.lat)
+        fun distanceMeters(a: Station, b: Station): Double = distanceMeters(a.lat, a.lng, b.lat, b.lng)
+
+        /** 2 地点間の大円距離（メートル）。 */
+        fun distanceMeters(aLat: Double, aLng: Double, bLat: Double, bLng: Double): Double {
+            val lat1 = Math.toRadians(aLat)
+            val lat2 = Math.toRadians(bLat)
             val dLat = lat2 - lat1
-            val dLng = Math.toRadians(b.lng - a.lng)
+            val dLng = Math.toRadians(bLng - aLng)
             val h = sin(dLat / 2) * sin(dLat / 2) + cos(lat1) * cos(lat2) * sin(dLng / 2) * sin(dLng / 2)
             return 2 * EARTH_RADIUS_METERS * asin(sqrt(h.coerceIn(0.0, 1.0)))
         }

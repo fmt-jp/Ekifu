@@ -20,8 +20,8 @@ data class EngineStatus(
     val audioElapsedSeconds: Double,
     val journey: JourneySnapshot,
     val phase: Phase,
-    /** 地上 0 〜 地下 1 のなめらかな値。 */
-    val undergroundMix: Double,
+    /** 音のこもり具合（地上・昼 0 〜 地下 1）のなめらかな値。 */
+    val filterMix: Double,
     /** いま鳴っている和音。 */
     val chord: Chord,
     val finished: Boolean,
@@ -33,18 +33,16 @@ data class EngineStatus(
  * 任意の長さに区切って [render] しても音はつながる。
  */
 class SoundEngine(
-    private val route: Route,
     private val journey: JourneySource,
     private val seed: Int,
     private val sampleRate: Int = C.SAMPLE_RATE,
 ) {
     private val composer = Composer(seed)
-    private val motifs = route.stations.mapIndexed { i, s -> StationMotif.generate(s.name, i == route.stations.lastIndex) }
 
     private val samplesPerBeat = C.BEAT_SECONDS * sampleRate
     private var samplePosition = 0L
     private var nextBeat = 0L
-    private var lastPassedStation = -1
+    private var lastLandmarkSequence = -1
 
     private val pending = ArrayDeque<ScheduledNote>()
     private var voices = ArrayList<Voice>()
@@ -60,10 +58,10 @@ class SoundEngine(
         C.COMPRESSOR_ATTACK_SECONDS, C.COMPRESSOR_RELEASE_SECONDS, C.COMPRESSOR_MAKEUP_DB,
     )
 
-    private var undergroundTarget = 0.0
-    private var undergroundMix = 0.0
+    private var filterTarget = 0.0
+    private var filterMix = 0.0
     private var reverbMix = C.REVERB_MIX_ABOVE
-    private val undergroundSmoothing =
+    private val filterSmoothing =
         1 - exp(-C.CONTROL_BLOCK_FRAMES / (C.UNDERGROUND_SMOOTHING_SECONDS * sampleRate))
 
     private var fadeStartSample = -1L
@@ -79,7 +77,7 @@ class SoundEngine(
             audioElapsedSeconds = samplePosition.toDouble() / sampleRate,
             journey = lastSnapshot,
             phase = composer.activePhase ?: lastPhase,
-            undergroundMix = undergroundMix,
+            filterMix = filterMix,
             chord = composer.currentChord,
             finished = finished,
         )
@@ -88,11 +86,11 @@ class SoundEngine(
      * 今の状態をまるごと複製する。チャンクの先頭で取っておけば、
      * 旅程の状態が変わったときにそこから合成し直せる。
      */
-    fun copy(): SoundEngine = SoundEngine(route, journey, seed, sampleRate).also {
+    fun copy(): SoundEngine = SoundEngine(journey, seed, sampleRate).also {
         it.composer.copyFrom(composer)
         it.samplePosition = samplePosition
         it.nextBeat = nextBeat
-        it.lastPassedStation = lastPassedStation
+        it.lastLandmarkSequence = lastLandmarkSequence
         it.pending.addAll(pending)
         it.voices = voices.mapTo(ArrayList(voices.size)) { v -> v.copy() }
         it.delay.copyFrom(delay)
@@ -100,8 +98,8 @@ class SoundEngine(
         it.masterLowpassLeft.copyFrom(masterLowpassLeft)
         it.masterLowpassRight.copyFrom(masterLowpassRight)
         it.compressor.copyFrom(compressor)
-        it.undergroundTarget = undergroundTarget
-        it.undergroundMix = undergroundMix
+        it.filterTarget = filterTarget
+        it.filterMix = filterMix
         it.reverbMix = reverbMix
         it.fadeStartSample = fadeStartSample
         it.lastSnapshot = lastSnapshot
@@ -133,17 +131,22 @@ class SoundEngine(
     private fun composeNextBeat() {
         val snapshot = journey.snapshot(samplePosition.toDouble() / sampleRate)
         lastSnapshot = snapshot
-        lastPhase = Phase.fromProgress(snapshot.progress)
-        undergroundTarget = if (snapshot.underground) 1.0 else 0.0
+        lastPhase = snapshot.phase
+        // 地下なら最大までこもらせ、そうでなければ時間帯によるこもり具合にする
+        filterTarget = if (snapshot.underground) 1.0 else snapshot.darkness.coerceIn(0.0, 1.0)
 
         var motif: List<Int>? = null
-        if (snapshot.lastPassedStationIndex > lastPassedStation) {
-            // 複数の駅を一度に通過した場合は、最後の駅だけ鳴らす
-            lastPassedStation = snapshot.lastPassedStationIndex
-            motif = motifs.getOrNull(lastPassedStation)
+        val landmark = snapshot.landmark
+        if (landmark != null && landmark.sequence > lastLandmarkSequence) {
+            // 複数の場所を一度に通過した場合は、最後の場所だけ鳴らす
+            lastLandmarkSequence = landmark.sequence
+            motif = StationMotif.generate(landmark.motifKey, landmark.isTerminal)
         }
         val wasArrived = composer.arrived
-        val events = composer.composeBeat(nextBeat, BeatContext(snapshot.progress, snapshot.underground, motif))
+        val events = composer.composeBeat(
+            nextBeat,
+            BeatContext(snapshot.progress, snapshot.underground, motif, snapshot.phase),
+        )
         if (!wasArrived && composer.arrived) fadeStartSample = beatSample(nextBeat)
         for (e in events) schedule(e)
         nextBeat++
@@ -200,11 +203,11 @@ class SoundEngine(
     }
 
     private fun updateControls() {
-        undergroundMix += (undergroundTarget - undergroundMix) * undergroundSmoothing
-        val cutoff = exp(lerp(ln(C.MASTER_LOWPASS_ABOVE_HZ), ln(C.MASTER_LOWPASS_UNDERGROUND_HZ), undergroundMix))
+        filterMix += (filterTarget - filterMix) * filterSmoothing
+        val cutoff = exp(lerp(ln(C.MASTER_LOWPASS_ABOVE_HZ), ln(C.MASTER_LOWPASS_UNDERGROUND_HZ), filterMix))
         masterLowpassLeft.set(cutoff, C.MASTER_LOWPASS_Q)
         masterLowpassRight.set(cutoff, C.MASTER_LOWPASS_Q)
-        reverbMix = lerp(C.REVERB_MIX_ABOVE, C.REVERB_MIX_UNDERGROUND, undergroundMix)
+        reverbMix = lerp(C.REVERB_MIX_ABOVE, C.REVERB_MIX_UNDERGROUND, filterMix)
     }
 
     private fun fadeGain(sample: Long): Double {

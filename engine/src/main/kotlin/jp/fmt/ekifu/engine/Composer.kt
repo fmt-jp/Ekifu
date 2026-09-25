@@ -9,6 +9,8 @@ data class BeatContext(
     val underground: Boolean,
     /** この拍までに新しく通過した駅のモチーフ（なければ null）。 */
     val passedStationMotif: List<Int>? = null,
+    /** 和音進行のフェーズ。ルートなしモードでは移動状態から決まる。 */
+    val phase: Phase = Phase.fromProgress(progress),
 )
 
 /**
@@ -56,7 +58,7 @@ class Composer(seed: Int) {
         }
 
         if (beat % C.BEATS_PER_CHORD == 0L) {
-            val phase = Phase.fromProgress(ctx.progress)
+            val phase = ctx.phase
             if (phase != activePhase) {
                 activePhase = phase
                 progressionIndex = 0

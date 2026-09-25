@@ -28,7 +28,7 @@ object StationMotif {
     }
 
     /** 端末や JVM に依存しない文字列ハッシュ（32bit FNV-1a、UTF-16 単位）。 */
-    internal fun fnv1a(text: String): Int {
+    fun fnv1a(text: String): Int {
         var hash = 0x811C9DC5.toInt()
         for (ch in text) {
             hash = hash xor ch.code

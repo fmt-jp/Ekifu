@@ -15,7 +15,7 @@ class ChunkedStreamTest {
 
     private fun newEngine(seed: Int = 1): SoundEngine {
         val journey = DemoJourney.create()
-        return SoundEngine(journey.route, journey, seed)
+        return SoundEngine(journey, seed)
     }
 
     /** 止めずに直接合成した、比較用の音。 */

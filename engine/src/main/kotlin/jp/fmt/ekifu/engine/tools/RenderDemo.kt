@@ -15,7 +15,7 @@ fun main(args: Array<String>) {
     val output = File(args.getOrElse(0) { "demo.wav" })
     val seed = args.getOrNull(1)?.toInt() ?: 1
     val journey = DemoJourney.create()
-    val engine = SoundEngine(journey.route, journey, seed)
+    val engine = SoundEngine(journey, seed)
     val chunkFrames = C.SAMPLE_RATE
     val chunk = ShortArray(chunkFrames * C.CHANNELS)
     val pcm = java.io.ByteArrayOutputStream()

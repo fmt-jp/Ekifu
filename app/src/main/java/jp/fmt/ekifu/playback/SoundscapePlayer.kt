@@ -32,13 +32,17 @@ class SoundscapePlayer(
         val s = controller.state.value
         val plan = s.plan
         val builder = SimpleBasePlayer.State.Builder().setAvailableCommands(COMMANDS)
-        // 再生できるルートがないときは空のプレイリスト（通知にも出さない）
-        if (plan == null) return builder.setPlaybackState(Player.STATE_IDLE).build()
+        // 再生できるものがないときは空のプレイリスト（通知にも出さない）
+        if (!s.playable) return builder.setPlaybackState(Player.STATE_IDLE).build()
 
-        val stations = plan.route.stations
+        val subtitle = if (plan != null) {
+            "${plan.route.stations.first().name} → ${plan.route.stations.last().name}"
+        } else {
+            WANDER_SUBTITLE
+        }
         val metadata = MediaMetadata.Builder()
             .setTitle(TITLE)
-            .setArtist("${stations.first().name} → ${stations.last().name}")
+            .setArtist(subtitle)
             .build()
         val item = SimpleBasePlayer.MediaItemData.Builder(MEDIA_ID)
             .setMediaItem(MediaItem.Builder().setMediaId(MEDIA_ID).setMediaMetadata(metadata).build())
@@ -88,6 +92,7 @@ class SoundscapePlayer(
 
     private companion object {
         const val TITLE = "通勤のサウンドスケープ"
+        const val WANDER_SUBTITLE = "ルートなし・いまいる場所から"
         const val MEDIA_ID = "commute"
         val COMMANDS: Player.Commands = Player.Commands.Builder()
             .addAll(

@@ -12,8 +12,8 @@ android {
         applicationId = "jp.fmt.ekifu"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.3.0-stage3"
+        versionCode = 4
+        versionName = "0.4.0-wander"
     }
 
     buildTypes {
@@ -42,6 +42,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.osmdroid)
+    implementation(libs.play.services.location)
     implementation(libs.androidx.media3.session)
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))

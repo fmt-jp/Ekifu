@@ -9,9 +9,7 @@ import jp.fmt.ekifu.engine.ChunkedStream
 import jp.fmt.ekifu.engine.EngineStatus
 import jp.fmt.ekifu.engine.JourneySource
 import jp.fmt.ekifu.engine.MusicConstants
-import jp.fmt.ekifu.engine.Route
 import jp.fmt.ekifu.engine.SoundEngine
-import jp.fmt.ekifu.engine.seed
 
 /** 再生側から見た状態（画面・通知・デバッグ表示用）。 */
 data class PipelineSnapshot(
@@ -26,11 +24,11 @@ data class PipelineSnapshot(
  * 合成はバッファが 30 秒を切ったときだけ動き、それ以外と一時停止中は休む。
  */
 class AudioPipeline(
-    route: Route,
     journey: JourneySource,
+    seed: Int,
     private val onUpdate: (PipelineSnapshot) -> Unit,
 ) {
-    private val stream = ChunkedStream(SoundEngine(route, journey, route.seed()))
+    private val stream = ChunkedStream(SoundEngine(journey, seed))
     private val track = createTrack()
     private val lock = Object()
     @Volatile private var running = true

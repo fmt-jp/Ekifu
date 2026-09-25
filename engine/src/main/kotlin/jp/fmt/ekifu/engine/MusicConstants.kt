@@ -86,6 +86,19 @@ object MusicConstants {
     /** 地上/地下の変化の時定数（秒）。 */
     const val UNDERGROUND_SMOOTHING_SECONDS = 2.5
 
+    // ---- ルートなしモード（位置情報だけで作る） ----
+    /** 場所ごとのモチーフを決める区画の一辺（メートル）。 */
+    const val PLACE_CELL_METERS = 500.0
+    /** 移動状態を判定するのに最低限あける、位置の間隔（秒）。 */
+    const val MOTION_MIN_SAMPLE_SECONDS = 60.0
+    /** これ未満の速さ（m/s）なら止まっているとみなす（約 1.8km/h）。 */
+    const val MOTION_WALK_MIN_SPEED = 0.5
+    /** これ以上の速さ（m/s）なら乗り物とみなす（約 11km/h）。 */
+    const val MOTION_RIDE_MIN_SPEED = 3.0
+    /** 時間帯（時）ごとの音のこもり具合。間は直線でつなぐ。夜ほどこもり、残響が深くなる。 */
+    val DARKNESS_HOURS = doubleArrayOf(0.0, 5.0, 7.0, 10.0, 16.0, 18.0, 20.0, 22.0, 24.0)
+    val DARKNESS_VALUES = doubleArrayOf(0.55, 0.5, 0.15, 0.0, 0.0, 0.15, 0.35, 0.5, 0.55)
+
     // ---- 音色：パッド ----
     const val PAD_DETUNE_CENTS = 6.0
     const val PAD_LOWPASS_HZ = 1400.0
