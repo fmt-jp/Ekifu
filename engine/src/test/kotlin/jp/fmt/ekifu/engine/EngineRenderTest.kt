@@ -32,7 +32,7 @@ class EngineRenderTest {
         while (!engine.isFinished) {
             if (engine.elapsedSec >= stopAt) engine.requestStop()
             engine.render(buf, block)
-            val st = engine.status
+            val st = engine.status()
             if (st.composer.phase != lastPhase) {
                 lastPhase = st.composer.phase
                 println("%6.1f秒 %s（%s）".format(st.elapsedSec, lastPhase!!.label, st.demoCue?.title))

@@ -9,18 +9,29 @@ import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 /** ステレオのディレイ（0.675秒、フィードバック0.32、フィードバック経路にローパス2200Hz） */
-class StereoDelay(sampleRate: Int) {
+class StereoDelay(private val sampleRate: Int) {
     private val size = (C.DELAY_SEC * sampleRate).roundToInt()
     private val bufL = DoubleArray(size)
     private val bufR = DoubleArray(size)
-    private val lpL = OnePole(sampleRate, C.DELAY_LOWPASS_HZ)
-    private val lpR = OnePole(sampleRate, C.DELAY_LOWPASS_HZ)
+    private var lpL = OnePole(sampleRate, C.DELAY_LOWPASS_HZ)
+    private var lpR = OnePole(sampleRate, C.DELAY_LOWPASS_HZ)
     private var pos = 0
     var feedback = C.DELAY_FEEDBACK
     var outL = 0.0
         private set
     var outR = 0.0
         private set
+
+    fun copy(): StereoDelay = StereoDelay(sampleRate).also {
+        bufL.copyInto(it.bufL)
+        bufR.copyInto(it.bufR)
+        it.lpL = lpL.copy()
+        it.lpR = lpR.copy()
+        it.pos = pos
+        it.feedback = feedback
+        it.outL = outL
+        it.outR = outR
+    }
 
     fun process(inL: Double, inR: Double) {
         val dl = lpL.process(bufL[pos])
@@ -38,13 +49,13 @@ class StereoDelay(sampleRate: Int) {
  * 8本の遅延線によるフィードバック・ディレイ・ネットワーク（FDN）リバーブ。
  * 各遅延線のゲインを残響時間（RT60）から決める。
  */
-class FdnReverb(sampleRate: Int) {
+class FdnReverb(private val sampleRate: Int) {
     private val n = C.REVERB_DELAYS_MS.size
     private val lengths = IntArray(n) { (C.REVERB_DELAYS_MS[it] / 1000.0 * sampleRate).roundToInt() }
     private val lines = Array(n) { DoubleArray(lengths[it]) }
     private val positions = IntArray(n)
     private val gains = DoubleArray(n) { 10.0.pow(-3.0 * lengths[it] / (C.REVERB_RT60_SEC * sampleRate)) }
-    private val damping = Array(n) { OnePole(sampleRate, C.REVERB_DAMPING_HZ) }
+    private var damping = Array(n) { OnePole(sampleRate, C.REVERB_DAMPING_HZ) }
     private val preDelay = DoubleArray((C.REVERB_PREDELAY_SEC * sampleRate).roundToInt().coerceAtLeast(1))
     private var prePos = 0
     private val v = DoubleArray(n)
@@ -53,6 +64,16 @@ class FdnReverb(sampleRate: Int) {
         private set
     var outR = 0.0
         private set
+
+    fun copy(): FdnReverb = FdnReverb(sampleRate).also {
+        for (i in 0 until n) lines[i].copyInto(it.lines[i])
+        positions.copyInto(it.positions)
+        it.damping = Array(n) { i -> damping[i].copy() }
+        preDelay.copyInto(it.preDelay)
+        it.prePos = prePos
+        it.outL = outL
+        it.outR = outR
+    }
 
     fun process(input: Double) {
         val x = preDelay[prePos]
@@ -95,11 +116,13 @@ class FdnReverb(sampleRate: Int) {
 }
 
 /** ステレオ連動のコンプレッサー（ピーク検出、dB領域） */
-class Compressor(sampleRate: Int) {
+class Compressor(private val sampleRate: Int) {
     private val attack = exp(-1.0 / (C.COMP_ATTACK_SEC * sampleRate))
     private val release = exp(-1.0 / (C.COMP_RELEASE_SEC * sampleRate))
     private val makeup = 10.0.pow(C.COMP_MAKEUP_DB / 20.0)
     private var envDb = -120.0
+
+    fun copy(): Compressor = Compressor(sampleRate).also { it.envDb = envDb }
 
     /** 今のサンプルにかけるゲインを返す */
     fun gainFor(l: Double, r: Double): Double {

@@ -22,33 +22,24 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import jp.fmt.ekifu.PlayerViewModel
 import jp.fmt.ekifu.engine.DemoScript
 import jp.fmt.ekifu.engine.EngineStatus
 import jp.fmt.ekifu.engine.Phase
+import jp.fmt.ekifu.engine.StreamStatus
+import jp.fmt.ekifu.playback.PlaybackBus
 
 @Composable
-fun PlayerScreen(viewModel: PlayerViewModel) {
-    val state by viewModel.state.collectAsStateWithLifecycle()
-    val status = state.status
-    val running = state.running
-    val stopping = status?.stopping == true
-
-    // 段階1は画面オンのみで鳴らすので、再生中は画面を消さない
-    val view = LocalView.current
-    DisposableEffect(running) {
-        view.keepScreenOn = running
-        onDispose { view.keepScreenOn = false }
-    }
+fun PlayerScreen(onPlay: () -> Unit, onPause: () -> Unit, onStop: () -> Unit) {
+    val ui by PlaybackBus.ui.collectAsStateWithLifecycle()
+    val stream = ui.stream
+    val status = stream?.engine
 
     Column(
         modifier = Modifier
@@ -61,60 +52,66 @@ fun PlayerScreen(viewModel: PlayerViewModel) {
     ) {
         Column {
             Text(
-                "通勤のサウンドスケープ",
+                "ekifu",
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground,
             )
             Text(
-                "段階1：音の再現（デモ再生）",
+                "段階2：バックグラウンド再生（デモ再生）",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
             )
         }
 
-        NowPlayingCard(status, running)
+        NowPlayingCard(ui.state, stream?.playSec ?: 0.0, status)
 
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+            val (label, action) = when (ui.state) {
+                PlaybackBus.State.IDLE -> "デモ再生" to onPlay
+                PlaybackBus.State.PLAYING -> "一時停止" to onPause
+                PlaybackBus.State.PAUSED -> "再開" to onPlay
+                PlaybackBus.State.ENDING -> "フェードアウト中…" to {}
+            }
             Button(
-                onClick = viewModel::play,
-                enabled = !running,
+                onClick = action,
+                enabled = ui.state != PlaybackBus.State.ENDING,
                 modifier = Modifier.weight(1f).height(56.dp),
-            ) { Text("デモ再生", fontSize = 18.sp) }
+            ) { Text(label, fontSize = 18.sp) }
             OutlinedButton(
-                onClick = viewModel::stop,
-                enabled = running && !stopping,
+                onClick = onStop,
+                enabled = ui.state == PlaybackBus.State.PLAYING || ui.state == PlaybackBus.State.PAUSED,
                 modifier = Modifier.weight(1f).height(56.dp),
-            ) { Text(if (stopping) "フェードアウト中…" else "停止", fontSize = 18.sp) }
+            ) { Text("停止", fontSize = 18.sp) }
         }
 
-        if (status != null) DebugCard(status, state.underruns)
+        if (stream != null && status != null) DebugCard(stream, status)
         TimelineCard(status)
     }
 }
 
 @Composable
-private fun NowPlayingCard(status: EngineStatus?, running: Boolean) {
+private fun NowPlayingCard(state: PlaybackBus.State, playSec: Double, status: EngineStatus?) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (status == null) {
-                Text("「デモ再生」を押すと、架空の通勤（自宅 → 公園 → 駅 → 職場）に合わせて曲が変わっていきます。約9分で職場に着き、そのあとは滞在が続きます。")
+            if (status == null || state == PlaybackBus.State.IDLE) {
+                Text("「デモ再生」を押すと、架空の通勤（自宅 → 公園 → 駅 → 職場）に合わせて曲が変わっていきます。約9分で職場に着き、そのあとは滞在が続きます。画面を消しても、ほかのアプリを使っていても鳴り続けます。")
                 return@Column
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    formatTime(status.elapsedSec),
+                    formatTime(playSec),
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                 )
                 Spacer(Modifier.width(12.dp))
                 PhaseChip(status.composer.phase)
-                if (!running) {
+                if (state == PlaybackBus.State.PAUSED) {
                     Spacer(Modifier.width(8.dp))
-                    Text("（停止しました）", style = MaterialTheme.typography.bodySmall)
+                    Text("（一時停止中）", style = MaterialTheme.typography.bodySmall)
                 }
             }
             status.demoCue?.let { cue ->
@@ -150,7 +147,7 @@ private fun PhaseChip(phase: Phase) {
 }
 
 @Composable
-private fun DebugCard(status: EngineStatus, underruns: Int) {
+private fun DebugCard(stream: StreamStatus, status: EngineStatus) {
     val c = status.composer
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
@@ -165,7 +162,8 @@ private fun DebugCard(status: EngineStatus, underruns: Int) {
             DebugRow("全体ローパス", "%.0f Hz".format(c.masterCutoffHz))
             DebugRow("地点", c.place?.let { "${it.name}（${it.mood.label}）" } ?: "なし")
             DebugRow("鳴っている音", "${status.activeVoices}")
-            DebugRow("音切れ（アンダーラン）", "$underruns 回")
+            DebugRow("バッファ残量", "%.1f 秒".format(stream.bufferedSec))
+            DebugRow("バッファ不足", "${stream.underruns} 回")
         }
     }
 }

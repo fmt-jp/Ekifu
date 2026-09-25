@@ -184,6 +184,28 @@ object MusicConstants {
     // ---- 再生 ----
     /** 作曲を先回りしておく時間（秒） */
     const val COMPOSE_LOOKAHEAD_SEC = 0.5
+    /** 作曲の先読みを区切る単位（フレーム） */
+    const val RENDER_BLOCK_FRAMES = 2048
+
+    // ---- チャンク生成とバッファ（7章） ----
+    /** 1チャンクの長さ */
+    const val CHUNK_SEC = 10.0
+    /** 再生開始・作り直しの最初のチャンク（すぐ鳴らすために短くする） */
+    const val FIRST_CHUNK_SEC = 2.0
+    /** 再生待ちがこれを切ったら合成を始める */
+    const val BUFFER_LOW_SEC = 30.0
+    /** 再生待ちをこれ以上は作らない（60秒 ≒ 10.6MB） */
+    const val BUFFER_HIGH_SEC = 60.0
+    /** 状態の変化で作り直すのは、再生位置からこれ以上先のチャンクから（仕様外・要調整） */
+    const val REWIND_MARGIN_SEC = 1.0
+    /** 停止時、作り置きの音をこの秒数で消し、新しく鳴らす I へ移る（仕様外・要調整） */
+    const val ENDING_BUFFER_FADE_SEC = 4.0
+    /** バッファ不足のつなぎのパッドの立ち上がり（仕様外・要調整） */
+    const val FILLER_ATTACK_SEC = 0.3
+    /** バッファ不足から戻るときのクロスフェード（仕様外・要調整） */
+    const val UNDERRUN_CROSSFADE_SEC = 0.5
+    /** 画面表示用に状態を記録する間隔 */
+    const val STATUS_INTERVAL_SEC = 0.25
 
     // ---- デモ再生（9章） ----
     /** 5分の場面を30秒に縮める */

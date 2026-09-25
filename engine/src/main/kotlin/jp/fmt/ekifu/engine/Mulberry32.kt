@@ -4,6 +4,8 @@ package jp.fmt.ekifu.engine
 class Mulberry32(seed: Int) {
     private var state = seed
 
+    fun copy(): Mulberry32 = Mulberry32(0).also { it.state = state }
+
     /** [0, 1) の一様乱数 */
     fun nextDouble(): Double {
         state += 0x6D2B79F5

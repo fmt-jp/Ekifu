@@ -28,7 +28,7 @@ data class ComposerStatus(
  */
 class Composer(seed: Int, private val config: ComposerConfig = ComposerConfig()) {
 
-    private val rng = Mulberry32(seed)
+    private var rng = Mulberry32(seed)
     private val out = ArrayList<MusicEvent>()
 
     /** 次に処理する半拍の時刻 */
@@ -62,8 +62,8 @@ class Composer(seed: Int, private val config: ComposerConfig = ComposerConfig())
     private var pendingPlace: Place? = null
     private var pendingLeave = false
 
-    private val beatSec = Ramp(C.BASE_BEAT_SEC)
-    private val noteProb = Ramp(C.PROB_START)
+    private var beatSec = Ramp(C.BASE_BEAT_SEC)
+    private var noteProb = Ramp(C.PROB_START)
     private var moodActive = false
     private var cutoffHz = C.MASTER_CUTOFF_HZ
     private var delayFeedback = C.DELAY_FEEDBACK
@@ -110,11 +110,40 @@ class Composer(seed: Int, private val config: ComposerConfig = ComposerConfig())
         phase = Phase.ENDING
         chord = Progressions.ENDING.first()
         endTimeSec = atSec + C.ENDING_FADE_SEC
-        out.clear()
-        out += ReleaseEvent(atSec, setOf(Instrument.PAD, Instrument.BASS))
-        emitChord(atSec, chord)
-        out += FadeOutEvent(atSec, C.ENDING_FADE_SEC)
-        return out.toList()
+        return endingEvents(atSec, scene)
+    }
+
+    /** 作曲の状態（乱数・フェーズ・場面・移り変わり途中の値）をまるごと複製する */
+    fun copy(): Composer = Composer(0, config).also {
+        it.rng = rng.copy()
+        it.timeSec = timeSec
+        it.endTimeSec = endTimeSec
+        it.started = started
+        it.ending = ending
+        it.phase = phase
+        it.phaseStartSec = phaseStartSec
+        it.progression = progression
+        it.progIndex = progIndex
+        it.chord = chord
+        it.chordBeats = chordBeats
+        it.halfStepInChord = halfStepInChord
+        it.journeyBeats = journeyBeats
+        it.scene = scene
+        it.pendingScene = pendingScene
+        it.sceneMotif = sceneMotif
+        it.previousSceneMotif = previousSceneMotif
+        it.place = place
+        it.placeTheme = placeTheme
+        it.pendingPhase = pendingPhase
+        it.pendingPlace = pendingPlace
+        it.pendingLeave = pendingLeave
+        it.beatSec = beatSec.copy()
+        it.noteProb = noteProb.copy()
+        it.moodActive = moodActive
+        it.cutoffHz = cutoffHz
+        it.delayFeedback = delayFeedback
+        it.lastMelody = lastMelody
+        it.melodyMuteUntilSec = melodyMuteUntilSec
     }
 
     /** tSec まで作曲を進め、新しく決まったイベントを返す */
@@ -274,16 +303,7 @@ class Composer(seed: Int, private val config: ComposerConfig = ComposerConfig())
     }
 
     private fun emitChord(atSec: Double, chord: Chord) {
-        val shift = scene.sun.chordShift
-        val padGain = C.PAD_GAIN *
-            (if (scene.familiarity == Familiarity.FAMILIAR) C.FAMILIAR_PAD_GAIN_FACTOR else 1.0)
-        val n = chord.intervals.size
-        chord.intervals.forEachIndexed { i, interval ->
-            // 構成音を左右に少しずつ広げる
-            val pan = if (n > 1) -0.4 + 0.8 * i / (n - 1) else 0.0
-            out += NoteEvent(atSec, Instrument.PAD, C.ROOT_MIDI + interval + shift, padGain, pan)
-        }
-        out += NoteEvent(atSec, Instrument.BASS, C.ROOT_MIDI + chord.rootInterval - 12 + shift, C.BASS_GAIN)
+        out += chordEvents(atSec, chord, scene)
     }
 
     private fun playMotif(notes: List<Int>, instrument: Instrument, gain: Double) {
@@ -316,6 +336,29 @@ class Composer(seed: Int, private val config: ComposerConfig = ComposerConfig())
     }
 }
 
+/** 和音（パッドとベース）の発音イベント */
+fun chordEvents(atSec: Double, chord: Chord, scene: Scene, padAttackSec: Double? = null): List<NoteEvent> {
+    val shift = scene.sun.chordShift
+    val padGain = C.PAD_GAIN *
+        (if (scene.familiarity == Familiarity.FAMILIAR) C.FAMILIAR_PAD_GAIN_FACTOR else 1.0)
+    val n = chord.intervals.size
+    val events = ArrayList<NoteEvent>(n + 1)
+    chord.intervals.forEachIndexed { i, interval ->
+        // 構成音を左右に少しずつ広げる
+        val pan = if (n > 1) -0.4 + 0.8 * i / (n - 1) else 0.0
+        events += NoteEvent(atSec, Instrument.PAD, C.ROOT_MIDI + interval + shift, padGain, pan, attackSec = padAttackSec)
+    }
+    events += NoteEvent(atSec, Instrument.BASS, C.ROOT_MIDI + chord.rootInterval - 12 + shift, C.BASS_GAIN)
+    return events
+}
+
+/** 終わり：鳴っているパッドとベースを余韻に入らせ、I を鳴らして約12秒でフェードアウトする */
+fun endingEvents(atSec: Double, scene: Scene): List<MusicEvent> = buildList {
+    add(ReleaseEvent(atSec, setOf(Instrument.PAD, Instrument.BASS)))
+    addAll(chordEvents(atSec, Progressions.ENDING.first(), scene))
+    add(FadeOutEvent(atSec, C.ENDING_FADE_SEC))
+}
+
 /** 拍単位で目標値へ直線的に移る値 */
 internal class Ramp(initial: Double) {
     var value = initial
@@ -326,6 +369,11 @@ internal class Ramp(initial: Double) {
     fun set(newTarget: Double, beats: Int) {
         target = newTarget
         perBeat = (newTarget - value) / beats
+    }
+
+    fun copy() = Ramp(value).also {
+        it.target = target
+        it.perBeat = perBeat
     }
 
     fun jump(v: Double) {

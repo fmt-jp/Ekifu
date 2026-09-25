@@ -24,15 +24,15 @@ class Synth(private val sampleRate: Int = C.SAMPLE_RATE) {
 
     private class Scheduled(val frame: Long, val order: Long, val event: MusicEvent)
 
-    private val queue = PriorityQueue<Scheduled>(compareBy<Scheduled>({ it.frame }, { it.order }))
+    private var queue = PriorityQueue<Scheduled>(compareBy<Scheduled>({ it.frame }, { it.order }))
     private var order = 0L
-    private val voices = ArrayList<Voice>()
+    private var voices = ArrayList<Voice>()
 
-    private val delay = StereoDelay(sampleRate)
-    private val reverb = FdnReverb(sampleRate)
-    private val masterL = Biquad(sampleRate, C.MASTER_CUTOFF_HZ)
-    private val masterR = Biquad(sampleRate, C.MASTER_CUTOFF_HZ)
-    private val compressor = Compressor(sampleRate)
+    private var delay = StereoDelay(sampleRate)
+    private var reverb = FdnReverb(sampleRate)
+    private var masterL = Biquad(sampleRate, C.MASTER_CUTOFF_HZ)
+    private var masterR = Biquad(sampleRate, C.MASTER_CUTOFF_HZ)
+    private var compressor = Compressor(sampleRate)
 
     // 全体ローパスとディレイのフィードバックの移り変わり
     private var cutoff = C.MASTER_CUTOFF_HZ
@@ -64,8 +64,28 @@ class Synth(private val sampleRate: Int = C.SAMPLE_RATE) {
         queue.clear()
     }
 
-    /** frames 個のステレオフレームを out（L, R 交互）に書く */
-    fun render(out: ShortArray, frames: Int) {
+    /** 鳴っている音・予定・エフェクトの内部バッファ・フィルターの状態をまるごと複製する */
+    fun copy(): Synth = Synth(sampleRate).also {
+        it.queue = PriorityQueue(queue)
+        it.order = order
+        it.voices = ArrayList<Voice>(voices.size).apply { voices.forEach { v -> add(v.copy()) } }
+        it.delay = delay.copy()
+        it.reverb = reverb.copy()
+        it.masterL = masterL.copy()
+        it.masterR = masterR.copy()
+        it.compressor = compressor.copy()
+        it.cutoff = cutoff
+        it.cutoffStep = cutoffStep
+        it.cutoffTarget = cutoffTarget
+        it.feedbackStep = feedbackStep
+        it.feedbackTarget = feedbackTarget
+        it.fade = fade
+        it.fadeStep = fadeStep
+        it.frame = frame
+    }
+
+    /** frames 個のステレオフレームを out の offsetFrames 以降（L, R 交互）に書く */
+    fun render(out: ShortArray, frames: Int, offsetFrames: Int = 0) {
         for (i in 0 until frames) {
             while (true) {
                 val head = queue.peek() ?: break
@@ -74,7 +94,7 @@ class Synth(private val sampleRate: Int = C.SAMPLE_RATE) {
                 apply(head.event)
             }
 
-            if (i and 63 == 0) updateControls(64)
+            if (frame and 63L == 0L) updateControls(64)
 
             var dryL = 0.0
             var dryR = 0.0
@@ -109,8 +129,9 @@ class Synth(private val sampleRate: Int = C.SAMPLE_RATE) {
 
             if (fadeStep > 0) fade = (fade - fadeStep).coerceAtLeast(0.0)
 
-            out[i * 2] = (l * 32767).toInt().toShort()
-            out[i * 2 + 1] = (r * 32767).toInt().toShort()
+            val o = (offsetFrames + i) * 2
+            out[o] = (l * 32767).toInt().toShort()
+            out[o + 1] = (r * 32767).toInt().toShort()
             frame++
         }
     }
@@ -133,7 +154,7 @@ class Synth(private val sampleRate: Int = C.SAMPLE_RATE) {
     private fun createVoice(e: NoteEvent): Voice {
         val hz = Scale.midiToHz(e.midi.toDouble())
         return when (e.instrument) {
-            Instrument.PAD -> PadVoice(sampleRate, hz, e.gain, e.pan)
+            Instrument.PAD -> PadVoice(sampleRate, hz, e.gain, e.pan, e.attackSec ?: C.PAD_ATTACK_SEC)
             Instrument.BASS -> BassVoice(sampleRate, hz, e.gain)
             Instrument.PLUCK -> PluckVoice(sampleRate, hz, e.gain, e.pan)
             Instrument.BELL -> BellVoice(sampleRate, hz, e.gain, e.pan)

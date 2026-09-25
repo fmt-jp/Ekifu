@@ -15,6 +15,8 @@ data class NoteEvent(
     val gain: Double,
     val pan: Double = 0.0,
     val durationSec: Double? = null,
+    /** パッドの立ち上がりを変えるとき（バッファ不足のつなぎ用）。null なら既定値 */
+    val attackSec: Double? = null,
 ) : MusicEvent
 
 /** 指定パートの鳴り続けている音を余韻に入らせる */

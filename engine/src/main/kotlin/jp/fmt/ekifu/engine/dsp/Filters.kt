@@ -34,6 +34,12 @@ class Biquad(private val sampleRate: Int, cutoffHz: Double, private val q: Doubl
         a2 = (1 - alpha) / a0
     }
 
+    /** 係数と内部状態をまるごと複製する */
+    fun copy(): Biquad = Biquad(sampleRate, 1000.0, q).also {
+        it.b0 = b0; it.b1 = b1; it.b2 = b2; it.a1 = a1; it.a2 = a2
+        it.x1 = x1; it.x2 = x2; it.y1 = y1; it.y2 = y2
+    }
+
     fun process(x: Double): Double {
         val y = b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2
         x2 = x1
@@ -45,9 +51,11 @@ class Biquad(private val sampleRate: Int, cutoffHz: Double, private val q: Doubl
 }
 
 /** 1次ローパス（フィードバック経路の高域減衰用） */
-class OnePole(sampleRate: Int, cutoffHz: Double) {
+class OnePole(private val sampleRate: Int, private val cutoffHz: Double) {
     private val a = exp(-2 * PI * cutoffHz / sampleRate)
     private var z = 0.0
+
+    fun copy(): OnePole = OnePole(sampleRate, cutoffHz).also { it.z = z }
 
     fun process(x: Double): Double {
         z = x * (1 - a) + z * a
