@@ -12,6 +12,9 @@ import androidx.core.content.ContextCompat
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
+import jp.fmt.ekifu.location.SceneSource
+import jp.fmt.ekifu.playback.PlaybackBus
+import jp.fmt.ekifu.playback.PlaybackMode
 import jp.fmt.ekifu.playback.PlaybackService
 import jp.fmt.ekifu.ui.EkifuTheme
 import jp.fmt.ekifu.ui.PlayerScreen
@@ -21,16 +24,18 @@ class MainActivity : ComponentActivity() {
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var controller: MediaController? = null
 
-    // 通知の許可（Android 13 以上）。許可されなくても再生はする
-    private val notificationPermission =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { controller?.play() }
+    // 位置（アプリ使用中）と通知（Android 13 以上）の許可。許可されなくても再生はする
+    private val permissions =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { controller?.play() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
             EkifuTheme {
                 PlayerScreen(
-                    onPlay = ::play,
+                    onPlay = { start(PlaybackMode.OMAKASE) },
+                    onPlayDemo = { start(PlaybackMode.DEMO) },
+                    onResume = { controller?.play() },
                     onPause = { controller?.pause() },
                     onStop = { controller?.stop() },
                 )
@@ -53,14 +58,21 @@ class MainActivity : ComponentActivity() {
         super.onStop()
     }
 
-    private fun play() {
-        val needsPermission = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
-            PackageManager.PERMISSION_GRANTED
-        if (needsPermission) {
-            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
-        } else {
-            controller?.play()
+    private fun start(mode: PlaybackMode) {
+        PlaybackBus.requestedMode = mode
+        val missing = buildList {
+            // 位置は「おおよそ」だけ許可されていても十分（約1km四方のマスを決めるため）
+            if (mode == PlaybackMode.OMAKASE && !SceneSource.hasLocationPermission(this@MainActivity)) {
+                add(Manifest.permission.ACCESS_FINE_LOCATION)
+                add(Manifest.permission.ACCESS_COARSE_LOCATION)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.POST_NOTIFICATIONS) !=
+                PackageManager.PERMISSION_GRANTED
+            ) {
+                add(Manifest.permission.POST_NOTIFICATIONS)
+            }
         }
+        if (missing.isEmpty()) controller?.play() else permissions.launch(missing.toTypedArray())
     }
 }

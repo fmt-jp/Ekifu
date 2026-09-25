@@ -131,6 +131,26 @@ class ComposerTest {
     }
 
     @Test
+    fun sameGridSceneChangeDoesNotRingBell() {
+        val slower = DAY_WALK.copy(speed = Speed.STILL, sun = SunLevel.TWILIGHT)
+        val events = compose(newComposer(), 150.0, listOf(80.0 to { c: Composer -> c.setScene(slower) }))
+        assertTrue(events.filterIsInstance<NoteEvent>().none { it.instrument == Instrument.BELL && it.timeSec > 1.0 })
+        // 値（全体ローパス）は移る
+        assertEquals(C.TWILIGHT_CUTOFF_HZ, events.filterIsInstance<ControlEvent>().last().masterCutoffHz)
+    }
+
+    @Test
+    fun motifAtStartCanBeSkipped() {
+        val c = Composer(1, ComposerConfig(playMotifAtStart = false)).also { it.setScene(DAY_WALK) }
+        assertTrue(compose(c, 10.0).filterIsInstance<NoteEvent>().none { it.instrument == Instrument.BELL })
+        val d = Composer(1).also { it.setScene(DAY_WALK) }
+        assertEquals(
+            Motifs.placeMotif(DAY_WALK.gridId),
+            compose(d, 10.0).filterIsInstance<NoteEvent>().filter { it.instrument == Instrument.BELL }.map { it.midi },
+        )
+    }
+
+    @Test
     fun tempoMovesGraduallyOverEightBeats() {
         val c = newComposer()
         val still = DAY_WALK.copy(speed = Speed.STILL)

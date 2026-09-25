@@ -68,6 +68,26 @@ object MusicConstants {
     const val VEHICLE_BEAT_SEC = 0.8
     const val VEHICLE_PROB = 0.55
 
+    // ---- 場面の決め方（5章） ----
+    /** 場面の区切り（位置を確かめる間隔） */
+    const val SCENE_INTERVAL_SEC = 5 * 60.0
+    /** これより古い位置は「取れなかった」とみなす（仕様外・要調整） */
+    const val LOCATION_MAX_AGE_SEC = 6 * 60.0
+    /** マスの大きさ（ジオハッシュの桁数。6桁 ≒ 1.2km × 0.6km） */
+    const val GEOHASH_PRECISION = 6
+    /** 静止とみなす速さ（km/h 未満） */
+    const val STILL_MAX_KMH = 0.5
+    /** 徒歩とみなす速さ（km/h まで）。これより速ければ乗り物 */
+    const val WALK_MAX_KMH = 7.0
+    /** なじみの場所とみなす訪問日数 */
+    const val FAMILIAR_DAYS = 10
+    /** 夜：太陽高度がこれ未満 */
+    const val NIGHT_MAX_ELEVATION_DEG = -6.0
+    /** 薄明：太陽高度がこれ未満（夜を除く） */
+    const val TWILIGHT_MAX_ELEVATION_DEG = 6.0
+    /** 位置の許可がないときに太陽の高さを概算する緯度（仕様外・要調整） */
+    const val NO_LOCATION_LATITUDE = 35.0
+
     // ---- なじみ度（5章） ----
     /** 初めての場所で高音ベルの装飾を入れる確率（1拍あたり）（仕様外・要調整） */
     const val NEW_PLACE_ORNAMENT_PROB = 0.07

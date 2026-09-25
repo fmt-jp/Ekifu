@@ -15,31 +15,47 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import jp.fmt.ekifu.engine.DemoScript
 import jp.fmt.ekifu.engine.EngineStatus
 import jp.fmt.ekifu.engine.Phase
 import jp.fmt.ekifu.engine.StreamStatus
 import jp.fmt.ekifu.playback.PlaybackBus
+import jp.fmt.ekifu.playback.PlaybackMode
+import kotlinx.coroutines.delay
 
 @Composable
-fun PlayerScreen(onPlay: () -> Unit, onPause: () -> Unit, onStop: () -> Unit) {
+fun PlayerScreen(
+    onPlay: () -> Unit,
+    onPlayDemo: () -> Unit,
+    onResume: () -> Unit,
+    onPause: () -> Unit,
+    onStop: () -> Unit,
+) {
     val ui by PlaybackBus.ui.collectAsStateWithLifecycle()
     val stream = ui.stream
     val status = stream?.engine
+    val active = ui.state != PlaybackBus.State.IDLE
+    val nowMs = rememberNowMs()
 
     Column(
         modifier = Modifier
@@ -58,19 +74,19 @@ fun PlayerScreen(onPlay: () -> Unit, onPause: () -> Unit, onStop: () -> Unit) {
                 color = MaterialTheme.colorScheme.onBackground,
             )
             Text(
-                "段階2：バックグラウンド再生（デモ再生）",
+                "場所が楽譜になる",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
             )
         }
 
-        NowPlayingCard(ui.state, stream?.playSec ?: 0.0, status)
+        NowPlayingCard(ui, status, nowMs)
 
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
             val (label, action) = when (ui.state) {
-                PlaybackBus.State.IDLE -> "デモ再生" to onPlay
+                PlaybackBus.State.IDLE -> "再生" to onPlay
                 PlaybackBus.State.PLAYING -> "一時停止" to onPause
-                PlaybackBus.State.PAUSED -> "再開" to onPlay
+                PlaybackBus.State.PAUSED -> "再開" to onResume
                 PlaybackBus.State.ENDING -> "フェードアウト中…" to {}
             }
             Button(
@@ -85,46 +101,72 @@ fun PlayerScreen(onPlay: () -> Unit, onPause: () -> Unit, onStop: () -> Unit) {
             ) { Text("停止", fontSize = 18.sp) }
         }
 
-        if (stream != null && status != null) DebugCard(stream, status)
-        TimelineCard(status)
+        if (active && stream != null && status != null) DebugCard(ui, stream, status, nowMs)
+        DeveloperCard(ui, status, onPlayDemo)
     }
 }
 
 @Composable
-private fun NowPlayingCard(state: PlaybackBus.State, playSec: Double, status: EngineStatus?) {
+private fun NowPlayingCard(ui: PlaybackBus.Ui, status: EngineStatus?, nowMs: Long) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (status == null || state == PlaybackBus.State.IDLE) {
-                Text("「デモ再生」を押すと、架空の通勤（自宅 → 公園 → 駅 → 職場）に合わせて曲が変わっていきます。約9分で職場に着き、そのあとは滞在が続きます。画面を消しても、ほかのアプリを使っていても鳴り続けます。")
+            if (status == null || ui.state == PlaybackBus.State.IDLE) {
+                Text("「再生」を押すと、いまいる場所から曲を作ります。約5分ごとに場面が変わり、同じ場所では同じメロディが鳴ります。画面を消しても鳴り続けます。")
+                Text(
+                    "位置は約1km四方のマスを決めるためだけに使い、訪れたマスと日付のほかは保存しません。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 return@Column
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    formatTime(playSec),
+                    formatTime(ui.stream?.playSec ?: 0.0),
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                 )
                 Spacer(Modifier.width(12.dp))
                 PhaseChip(status.composer.phase)
-                if (state == PlaybackBus.State.PAUSED) {
+                if (ui.state == PlaybackBus.State.PAUSED) {
                     Spacer(Modifier.width(8.dp))
                     Text("（一時停止中）", style = MaterialTheme.typography.bodySmall)
                 }
             }
-            status.demoCue?.let { cue ->
-                Text(cue.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            if (ui.mode == PlaybackMode.DEMO) {
+                Text("デモ再生", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.tertiary)
+                status.demoCue?.let { cue ->
+                    Text(cue.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(
+                        "聞きどころ：${cue.hint}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Text(
+                status.composer.scene.label,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+            ui.scene?.nextSceneAtMs?.let { next ->
                 Text(
-                    "聞きどころ：${cue.hint}",
+                    "次の場面まで ${formatTime(((next - nowMs) / 1000.0).coerceAtLeast(0.0))}",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Text("場面：${status.composer.scene.label}", style = MaterialTheme.typography.bodyMedium)
             placeText(status)?.let {
                 Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+            }
+            if (ui.scene?.hasPermission == false) {
+                Text(
+                    "位置の許可がないため、太陽の高さ（タイムゾーンから概算）と経過時間だけで曲を作っています。登録地点の演出は使えません。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.tertiary,
+                )
             }
         }
     }
@@ -147,7 +189,7 @@ private fun PhaseChip(phase: Phase) {
 }
 
 @Composable
-private fun DebugCard(stream: StreamStatus, status: EngineStatus) {
+private fun DebugCard(ui: PlaybackBus.Ui, stream: StreamStatus, status: EngineStatus, nowMs: Long) {
     val c = status.composer
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
@@ -160,6 +202,19 @@ private fun DebugCard(stream: StreamStatus, status: EngineStatus) {
             DebugRow("1拍", "%.3f 秒".format(c.beatSec))
             DebugRow("発音確率", "%.2f".format(c.noteProb))
             DebugRow("全体ローパス", "%.0f Hz".format(c.masterCutoffHz))
+            DebugRow("マス", c.scene.gridId)
+            ui.scene?.let { sc ->
+                DebugRow("速さ", sc.decision?.speedKmh?.let { "%.1f km/h".format(it) } ?: "—")
+                DebugRow(
+                    "位置",
+                    when {
+                        !sc.hasPermission -> "許可なし"
+                        sc.decision?.located == false -> "取れず（直前の場面を継続）"
+                        sc.lastFixAtMs != null -> "${formatTime((nowMs - sc.lastFixAtMs) / 1000.0)} 前に取得"
+                        else -> "取得待ち"
+                    },
+                )
+            }
             DebugRow("地点", c.place?.let { "${it.name}（${it.mood.label}）" } ?: "なし")
             DebugRow("鳴っている音", "${status.activeVoices}")
             DebugRow("バッファ残量", "%.1f 秒".format(stream.bufferedSec))
@@ -176,14 +231,19 @@ private fun DebugRow(label: String, value: String) {
     }
 }
 
+/** 開発用：デモ再生（5分の場面を30秒に縮めた架空の通勤） */
 @Composable
-private fun TimelineCard(status: EngineStatus?) {
+private fun DeveloperCard(ui: PlaybackBus.Ui, status: EngineStatus?, onPlayDemo: () -> Unit) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("デモの流れ", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+            Text("開発用", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+            OutlinedButton(onClick = onPlayDemo, enabled = ui.state == PlaybackBus.State.IDLE) {
+                Text("デモ再生（自宅 → 公園 → 駅 → 職場）")
+            }
+            if (ui.mode != PlaybackMode.DEMO || ui.state == PlaybackBus.State.IDLE) return@Column
             DemoScript.COMMUTE.cues.forEach { cue ->
                 val current = status?.demoCue === cue
                 Row {
@@ -204,6 +264,22 @@ private fun TimelineCard(status: EngineStatus?) {
             }
         }
     }
+}
+
+/** 画面が見えているあいだだけ1秒ごとに進む現在時刻 */
+@Composable
+private fun rememberNowMs(): Long {
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                now = System.currentTimeMillis()
+                delay(1000)
+            }
+        }
+    }
+    return now
 }
 
 private fun placeText(status: EngineStatus): String? {

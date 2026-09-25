@@ -5,6 +5,8 @@ import jp.fmt.ekifu.engine.MusicConstants as C
 data class ComposerConfig(
     val startPhaseSec: Double = C.START_PHASE_SEC,
     val interludeEverySec: Double = C.INTERLUDE_EVERY_SEC,
+    /** 再生開始時にベルで最初の場所のモチーフを鳴らすか（位置の取得を待つおまかせ再生では鳴らさない） */
+    val playMotifAtStart: Boolean = true,
 )
 
 /** 画面のデバッグ表示用 */
@@ -210,14 +212,16 @@ class Composer(seed: Int, private val config: ComposerConfig = ComposerConfig())
         }
 
         // 場面
-        var sceneChanged = first
+        // ベルで場所のモチーフを鳴らすのはマスが変わったときだけ。
+        // 同じマスなら速さ・なじみ度・太陽の値だけ移す
+        var sceneChanged = first && config.playMotifAtStart
         pendingScene?.let { newScene ->
-            if (newScene != scene) {
-                previousSceneMotif = sceneMotif
-                scene = newScene
-                sceneMotif = Motifs.placeMotif(scene.gridId)
-                sceneChanged = true
+            if (newScene.gridId != scene.gridId) {
+                if (!first) previousSceneMotif = sceneMotif
+                sceneMotif = Motifs.placeMotif(newScene.gridId)
+                sceneChanged = !first || config.playMotifAtStart
             }
+            scene = newScene
         }
         pendingScene = null
 
