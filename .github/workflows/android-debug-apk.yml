@@ -1,0 +1,40 @@
+name: デバッグ用APKのビルド
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: 単体テスト（音楽エンジン）
+        run: ./gradlew :engine:test --stacktrace
+
+      - name: デバッグ用APKをビルド
+        run: ./gradlew :app:assembleDebug --stacktrace
+
+      - name: APKを成果物としてアップロード
+        uses: actions/upload-artifact@v4
+        with:
+          name: ekifu-debug-apk-${{ github.run_number }}
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+      - name: テスト結果をアップロード（失敗時）
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports-${{ github.run_number }}
+          path: engine/build/reports/tests/
