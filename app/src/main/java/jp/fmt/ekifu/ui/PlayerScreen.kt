@@ -104,7 +104,16 @@ fun PlayerScreen(
                 enabled = ui.state != PlaybackBus.State.ENDING,
                 shape = RoundedCornerShape(28.dp),
                 modifier = Modifier.weight(2f).height(64.dp),
-            ) { Text(label, fontSize = 20.sp, fontWeight = FontWeight.Bold) }
+            ) {
+                // 長い表示（フェードアウト中…）は少し小さくし、折り返さない
+                Text(
+                    label,
+                    fontSize = if (label.length > 4) 16.sp else 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    softWrap = false,
+                )
+            }
             OutlinedButton(
                 onClick = onStop,
                 enabled = ui.state == PlaybackBus.State.PLAYING || ui.state == PlaybackBus.State.PAUSED,
