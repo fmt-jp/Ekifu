@@ -1,6 +1,14 @@
 package jp.fmt.ekifu.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.res.painterResource
+import jp.fmt.ekifu.R
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -73,6 +81,8 @@ fun PlayerScreen(
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
+            AppIcon()
+            Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(
                     "ekifu",
@@ -128,6 +138,27 @@ fun PlayerScreen(
         }
     }
 }
+
+/** ホーム画面のアイコンと同じ絵柄（アダプティブアイコンの前景を、背景色の角丸に収める） */
+@Composable
+private fun AppIcon() {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .size(ICON_SIZE)
+            .clip(RoundedCornerShape(12.dp))
+            .background(colorResource(R.color.icon_background)),
+    ) {
+        // 前景は 108dp 四方のうち中央 72dp に絵がある
+        Image(
+            painter = painterResource(R.drawable.ic_launcher_foreground),
+            contentDescription = null,
+            modifier = Modifier.requiredSize(ICON_SIZE * 108f / 72f),
+        )
+    }
+}
+
+private val ICON_SIZE = 44.dp
 
 @Composable
 private fun NowPlayingCard(ui: PlaybackBus.Ui, status: EngineStatus?, nowMs: Long) {
