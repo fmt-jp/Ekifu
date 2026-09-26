@@ -52,6 +52,7 @@ class EkifuPlayer(context: Context) : SimpleBasePlayer(Looper.getMainLooper()) {
     private var subtitle = defaultSubtitle()
     @Volatile private var postedSubtitle = subtitle
     private var positionMs = 0L
+    private val interruptions = Interruptions(context) { onInterrupted() }
 
     /** 位置を使って再生中か（フォアグラウンドサービスに location 種別を付けるかどうか） */
     val usesLocation: Boolean
@@ -103,19 +104,42 @@ class EkifuPlayer(context: Context) : SimpleBasePlayer(Looper.getMainLooper()) {
 
     override fun handleSetPlayWhenReady(playWhenReady: Boolean): ListenableFuture<*> {
         if (ending) return Futures.immediateVoidFuture() // フェードアウト中は操作しない
-        this.playWhenReady = playWhenReady
         if (playWhenReady) {
+            // 通話中などでオーディオフォーカスが取れなければ鳴らさない
+            if (!interruptions.acquire()) return Futures.immediateVoidFuture()
+            this.playWhenReady = true
             ensurePrepared()
             playbackState = Player.STATE_READY
             audio.play()
             scenes?.start()
         } else {
-            // 一時停止中は合成も位置の取得も止める
-            audio.pause()
-            scenes?.pause()
+            pauseInternal()
         }
         publish()
         return Futures.immediateVoidFuture()
+    }
+
+    /** 一時停止中は合成も位置の取得も止める */
+    private fun pauseInternal() {
+        playWhenReady = false
+        audio.pause()
+        scenes?.pause()
+        interruptions.release()
+    }
+
+    /** 着信・他アプリの再生・イヤホン抜け：一時停止（自動では再開しない） */
+    private fun onInterrupted() {
+        if (ending) {
+            // フェードアウト中なら、そのまま終える
+            releaseScenes()
+            audio.release()
+            interruptions.release()
+            resetToIdle()
+        } else if (playWhenReady) {
+            pauseInternal()
+            publish()
+        }
+        invalidateState()
     }
 
     /** 新しく再生を始めるときに、画面で選ばれた種類の曲を用意する */
@@ -160,6 +184,7 @@ class EkifuPlayer(context: Context) : SimpleBasePlayer(Looper.getMainLooper()) {
                 // 一時停止中の停止はすぐに終える
                 releaseScenes()
                 audio.release()
+                interruptions.release()
                 resetToIdle()
             }
         }
@@ -169,6 +194,7 @@ class EkifuPlayer(context: Context) : SimpleBasePlayer(Looper.getMainLooper()) {
     override fun handleRelease(): ListenableFuture<*> {
         releaseScenes()
         audio.release()
+        interruptions.release()
         PlaybackBus.update(PlaybackBus.State.IDLE, mode, null)
         return Futures.immediateVoidFuture()
     }
@@ -187,6 +213,7 @@ class EkifuPlayer(context: Context) : SimpleBasePlayer(Looper.getMainLooper()) {
     private fun onStreamFinished() {
         releaseScenes()
         audio.release()
+        interruptions.release()
         resetToIdle()
         invalidateState()
     }

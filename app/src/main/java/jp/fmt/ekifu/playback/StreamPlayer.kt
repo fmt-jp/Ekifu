@@ -38,6 +38,8 @@ class StreamPlayer(context: Context, private val listener: Listener) {
     @Volatile private var stream: ChunkStream? = null
     @Volatile private var paused = true
     @Volatile private var abort = false
+    /** 受け入れ基準（再生開始1秒以内）の計測用：play を押した時刻 */
+    @Volatile private var playRequestedAtMs = 0L
     private var synthThread: Thread? = null
     private var writerThread: Thread? = null
 
@@ -64,6 +66,7 @@ class StreamPlayer(context: Context, private val listener: Listener) {
     /** prepare のあとで呼ぶ */
     fun play() {
         if (stream == null) return
+        playRequestedAtMs = System.currentTimeMillis()
         wakeLock.acquire(WAKE_LOCK_TIMEOUT_MS)
         synchronized(pauseLock) {
             paused = false
@@ -165,6 +168,10 @@ class StreamPlayer(context: Context, private val listener: Listener) {
                         return
                     }
                     offset += w
+                }
+                if (playRequestedAtMs != 0L) {
+                    Log.i(TAG, "再生開始まで ${System.currentTimeMillis() - playRequestedAtMs} ms")
+                    playRequestedAtMs = 0L
                 }
                 if (volume < 1f) {
                     volume = minOf(1f, volume + VOLUME_STEP)

@@ -20,6 +20,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -42,6 +43,7 @@ import jp.fmt.ekifu.engine.PlaceTracker
 import jp.fmt.ekifu.engine.StreamStatus
 import jp.fmt.ekifu.playback.PlaybackBus
 import jp.fmt.ekifu.playback.PlaybackMode
+import jp.fmt.ekifu.settings.AppSettings
 import kotlinx.coroutines.delay
 
 @Composable
@@ -52,8 +54,10 @@ fun PlayerScreen(
     onPause: () -> Unit,
     onStop: () -> Unit,
     onOpenPlaces: () -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     val ui by PlaybackBus.ui.collectAsStateWithLifecycle()
+    val debugVisible by AppSettings.debugVisible.collectAsStateWithLifecycle()
     val stream = ui.stream
     val status = stream?.engine
     val active = ui.state != PlaybackBus.State.IDLE
@@ -66,23 +70,24 @@ fun PlayerScreen(
             .safeDrawingPadding()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(
                     "ekifu",
-                    style = MaterialTheme.typography.headlineSmall,
+                    style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onBackground,
                 )
                 Text(
                     "場所が楽譜になる",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+                    color = MaterialTheme.colorScheme.primary,
                 )
             }
-            OutlinedButton(onClick = onOpenPlaces) { Text("登録地点") }
+            TextButton(onClick = onOpenPlaces) { Text("地点") }
+            TextButton(onClick = onOpenSettings) { Text("設定") }
         }
 
         NowPlayingCard(ui, status, nowMs)
@@ -97,17 +102,21 @@ fun PlayerScreen(
             Button(
                 onClick = action,
                 enabled = ui.state != PlaybackBus.State.ENDING,
-                modifier = Modifier.weight(1f).height(56.dp),
-            ) { Text(label, fontSize = 18.sp) }
+                shape = RoundedCornerShape(28.dp),
+                modifier = Modifier.weight(2f).height(64.dp),
+            ) { Text(label, fontSize = 20.sp, fontWeight = FontWeight.Bold) }
             OutlinedButton(
                 onClick = onStop,
                 enabled = ui.state == PlaybackBus.State.PLAYING || ui.state == PlaybackBus.State.PAUSED,
-                modifier = Modifier.weight(1f).height(56.dp),
+                shape = RoundedCornerShape(28.dp),
+                modifier = Modifier.weight(1f).height(64.dp),
             ) { Text("停止", fontSize = 18.sp) }
         }
 
-        if (active && stream != null && status != null) DebugCard(ui, stream, status, nowMs)
-        DeveloperCard(ui, status, onPlayDemo)
+        if (debugVisible) {
+            if (active && stream != null && status != null) DebugCard(ui, stream, status, nowMs)
+            DeveloperCard(ui, status, onPlayDemo)
+        }
     }
 }
 
@@ -115,9 +124,10 @@ fun PlayerScreen(
 private fun NowPlayingCard(ui: PlaybackBus.Ui, status: EngineStatus?, nowMs: Long) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = RoundedCornerShape(24.dp),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (status == null || ui.state == PlaybackBus.State.IDLE) {
                 Text("「再生」を押すと、いまいる場所から曲を作ります。約5分ごとに場面が変わり、同じ場所では同じメロディが鳴ります。画面を消しても鳴り続けます。")
                 Text(

@@ -23,6 +23,8 @@ import jp.fmt.ekifu.location.SceneSource
 import jp.fmt.ekifu.places.PlaceEditScreen
 import jp.fmt.ekifu.places.PlaceListScreen
 import jp.fmt.ekifu.places.PlacesViewModel
+import jp.fmt.ekifu.settings.AppSettings
+import jp.fmt.ekifu.settings.SettingsScreen
 import jp.fmt.ekifu.playback.PlaybackBus
 import jp.fmt.ekifu.playback.PlaybackMode
 import jp.fmt.ekifu.playback.PlaybackService
@@ -41,6 +43,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AppSettings.load(this)
         setContent {
             EkifuTheme {
                 var screen by rememberSaveable { mutableStateOf<String?>(null) }
@@ -53,7 +56,9 @@ class MainActivity : ComponentActivity() {
                         onPause = { controller?.pause() },
                         onStop = { controller?.stop() },
                         onOpenPlaces = { screen = SCREEN_PLACES },
+                        onOpenSettings = { screen = SCREEN_SETTINGS },
                     )
+                    SCREEN_SETTINGS -> SettingsScreen(onBack = { screen = null })
                     SCREEN_PLACES -> PlaceListScreen(
                         places = places,
                         onBack = { screen = null },
@@ -118,6 +123,7 @@ class MainActivity : ComponentActivity() {
 
     private companion object {
         const val SCREEN_PLACES = "places"
+        const val SCREEN_SETTINGS = "settings"
         const val SCREEN_NEW_PLACE = "new-place"
     }
 }
