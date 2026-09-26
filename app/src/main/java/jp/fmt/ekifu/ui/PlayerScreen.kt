@@ -192,14 +192,18 @@ private fun NowPlayingCard(ui: PlaybackBus.Ui, status: EngineStatus?, nowMs: Lon
                 }
             }
             if (ui.mode == PlaybackMode.FUSION_DEMO) {
-                Text("フュージョンの音色デモ", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.tertiary)
-                Text(status.composer.chordLabel, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text("デモ再生・フュージョン", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.tertiary)
+                status.demoCue?.let { Text(it.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
+                Text(status.composer.chordLabel, style = MaterialTheme.typography.bodyLarge)
                 status.composer.heat?.let {
                     Text(
-                        "熱量 %.1f・%.0f BPM".format(it, 60.0 / status.composer.beatSec),
+                        "熱量 %.2f・%.0f BPM".format(it, 60.0 / status.composer.beatSec),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                }
+                placeText(status)?.let {
+                    Text(it, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
                 }
                 return@Column
             }
@@ -348,9 +352,9 @@ private fun DeveloperCard(
                 Text("デモ再生（自宅 → 公園 → 駅 → 職場）")
             }
             OutlinedButton(onClick = onPlayFusionDemo, enabled = ui.state == PlaybackBus.State.IDLE) {
-                Text("フュージョンの音色デモ")
+                Text("フュージョンのデモ再生（自宅 → 公園 → 駅 → 職場）")
             }
-            if (ui.mode != PlaybackMode.DEMO || ui.state == PlaybackBus.State.IDLE) return@Column
+            if (ui.mode == PlaybackMode.OMAKASE || ui.state == PlaybackBus.State.IDLE) return@Column
             DemoScript.COMMUTE.cues.forEach { cue ->
                 val current = status?.demoCue === cue
                 Row {

@@ -25,6 +25,8 @@ data class ComposerStatus(
     val heat: Double? = null,
     /** フュージョンのいまの和音（癒しでは null） */
     val fusionChord: FusionChord? = null,
+    /** フュージョンのいまのブロックの頭の時刻（停止のキメを16分に合わせる） */
+    val gridStartSec: Double? = null,
 )
 
 /**

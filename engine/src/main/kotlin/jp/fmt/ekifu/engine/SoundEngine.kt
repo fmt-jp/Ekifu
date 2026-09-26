@@ -36,8 +36,14 @@ interface SoundEngine {
 
     fun apply(action: (ComposerInput) -> Unit)
 
-    /** 停止ボタン：status の時点の曲に続けて鳴らす「終わり」（約12秒でフェードアウト） */
-    fun endingRenderer(status: EngineStatus): Renderer
+    /**
+     * 停止ボタン：status の時点の曲に続けて鳴らす「終わり」（約12秒でフェードアウト）。
+     * nowSec は停止した再生位置（リズムの刻みに合わせるため）
+     */
+    fun endingRenderer(status: EngineStatus, nowSec: Double): Renderer
+
+    /** 停止ボタンで、それまでの演奏を消す時間 */
+    val endingCrossfadeSec: Double get() = MusicConstants.ENDING_BUFFER_FADE_SEC
 
     /** バッファ不足のあいだ、status の時点の和音を伸ばしてつなぐ音 */
     fun fillerRenderer(status: EngineStatus): Renderer

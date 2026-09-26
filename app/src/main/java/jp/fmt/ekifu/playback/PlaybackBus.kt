@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.update
 enum class PlaybackMode {
     OMAKASE,
     DEMO,
-    /** 段階6a：フュージョンの音色デモ（開発用）。段階6cで「曲調」の設定に置き換える */
+    /** フュージョンのデモ再生（開発用。台本は癒しと同じ）。段階6cで「曲調」の設定に置き換える */
     FUSION_DEMO,
 }
 

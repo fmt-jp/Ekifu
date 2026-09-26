@@ -261,7 +261,7 @@ class EkifuPlayer(context: Context) : SimpleBasePlayer(Looper.getMainLooper()) {
         const val MEDIA_ID = "ekifu"
         const val SUBTITLE_OMAKASE = "おまかせ再生中"
         const val SUBTITLE_DEMO = "デモ再生中"
-        const val SUBTITLE_FUSION_DEMO = "フュージョンの音色デモ"
+        const val SUBTITLE_FUSION_DEMO = "デモ再生中・フュージョン"
         const val SUBTITLE_ENDING = "終わり（フェードアウト中）"
     }
 }

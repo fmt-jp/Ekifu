@@ -54,7 +54,7 @@ class ChunkStream(engine: SoundEngine) {
     private val marginFrames = sec(C.REWIND_MARGIN_SEC)
     private val statusFrames = sec(C.STATUS_INTERVAL_SEC)
     private val crossfadeFrames = sec(C.UNDERRUN_CROSSFADE_SEC)
-    private val endingBufferFadeFrames = sec(C.ENDING_BUFFER_FADE_SEC)
+    private var endingBufferFadeFrames = sec(C.ENDING_BUFFER_FADE_SEC)
     private val endingFrames = sec(C.ENDING_FADE_SEC)
 
     // ---- lock で守る ----
@@ -169,7 +169,8 @@ class ChunkStream(engine: SoundEngine) {
         synchronized(lock) {
             if (ending != null || finished) return
             val st = statusAtLocked(readFrame) ?: live.status()
-            ending = live.endingRenderer(st)
+            ending = live.endingRenderer(st, readFrame.toDouble() / sampleRate)
+            endingBufferFadeFrames = sec(live.endingCrossfadeSec).coerceAtLeast(1)
             endingDone = 0
             inputs.clear()
             lock.notifyAll()

@@ -85,7 +85,7 @@ class MusicEngine private constructor(
         }
     }
 
-    override fun endingRenderer(status: EngineStatus): Renderer = Synth(sampleRate).also {
+    override fun endingRenderer(status: EngineStatus, nowSec: Double): Renderer = Synth(sampleRate).also {
         it.schedule(
             listOf(ControlEvent(0.0, status.composer.masterCutoffHz, C.DELAY_FEEDBACK, 0.0)) +
                 endingEvents(0.0, status.composer.scene),

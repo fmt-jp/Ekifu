@@ -225,6 +225,7 @@ class FusionSynth(private val sampleRate: Int = C.SAMPLE_RATE, noiseSeed: Int = 
                 masterR.setCutoff(action.masterCutoffHz)
                 lead.filterBaseHz = action.leadFilterBaseHz
                 delay.setDelaySec(action.delaySec)
+                delay.feedback = action.delayFeedback
             }
             is FusionFadeOut -> fadeStep = 1.0 / (action.durationSec * sampleRate)
         }

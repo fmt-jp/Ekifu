@@ -44,6 +44,8 @@ data class FusionChord(val rootPc: Int, val quality: FusionQuality, val keyPc: I
 
     fun targetPcs(): Set<Int> = quality.targets.map { (rootPc + it) % 12 }.toSet()
 
+    fun tensionPcs(): Set<Int> = quality.tensions.map { (rootPc + it) % 12 }.toSet()
+
     companion object {
         private val MAJOR = intArrayOf(0, 2, 4, 5, 7, 9, 11)
         private val NAMES = arrayOf("C", "D♭", "D", "E♭", "E", "F", "F♯", "G", "G♯", "A", "B♭", "B")
@@ -99,6 +101,8 @@ data class LeadNote(
     val fall: Boolean = false,
     /** ビブラートの深さ（セント、0 ならなし） */
     val vibratoCents: Double = 0.0,
+    /** 回り込みの半音（調の外の音でもよい） */
+    val chromatic: Boolean = false,
 ) : FusionEvent
 
 enum class PolyPart { BRASS, BASS }
@@ -128,6 +132,7 @@ data class FusionControl(
     val masterCutoffHz: Double,
     val leadFilterBaseHz: Double,
     val delaySec: Double,
+    val delayFeedback: Double = F.DELAY_FEEDBACK,
 ) : FusionEvent
 
 data class FusionFadeOut(override val timeSec: Double, val durationSec: Double) : FusionEvent

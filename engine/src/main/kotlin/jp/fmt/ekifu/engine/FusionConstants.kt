@@ -31,11 +31,61 @@ object FusionConstants {
     const val BASS_BASE_OFFSET = 36
     const val BASS_BASE_MAX = 41
 
-    // ---- 段階6a の音色デモ（固定の進行と熱量） ----
-    const val DEMO_BPM = 132.0
-    /** ブロックごとに巡回する熱量 */
-    val DEMO_HEATS = doubleArrayOf(0.3, 0.6, 0.9)
+    // ---- テンポ（12.2） ----
+    /** 静止・徒歩・乗り物（仕様外・要調整。参照実装の既定は138） */
+    const val STILL_BPM = 120.0
+    const val WALK_BPM = 132.0
+    const val VEHICLE_BPM = 144.0
+    /** 雰囲気「明るい」「落ち着く」で足すテンポ */
+    const val BRIGHT_BPM_DELTA = 6.0
+    const val CALM_BPM_DELTA = -12.0
+    /** 雰囲気「懐かしい」のディレイのフィードバック（癒しと同じ） */
+    const val NOSTALGIC_DELAY_FEEDBACK = 0.45
+
+    // ---- 熱量（12.5） ----
+    const val STILL_HEAT = 0.25
+    const val WALK_HEAT = 0.45
+    const val VEHICLE_HEAT = 0.65
+    val HEAT_WAVE = doubleArrayOf(-0.1, 0.0, 0.1, 0.25, 0.35, 0.05)
+    const val NEW_PLACE_HEAT = 0.05
+    const val FAMILIAR_HEAT = -0.1
+    const val NIGHT_HEAT = -0.1
+    const val HEAT_JITTER = 0.05
+    const val APPROACH_HEAT = 0.2
+    const val START_HEAT = 0.2
+    const val STAY_HEAT = 0.2
+
+    // ---- リードのフレーズ（12.6） ----
+    const val LEAD_START_MIDI = 72
+    /** 音域の引力：これを超えたら下向き、下回ったら上向き */
+    const val GRAVITY_HIGH = 77
+    const val GRAVITY_LOW = 66
+    /** 新しいモチーフを作る確率 */
+    const val MOTIF_RENEW_PROB = 0.18
+    /** 泣きのハイトーンの音域 */
+    const val HIGH_TONE_MIN = 80
+    const val HIGH_TONE_TARGET = 84
+    /** キメの開始の高さ：min(直前の音, 72) − 8 */
+    const val KIME_START_CAP = 72
+    const val KIME_START_DROP = 8
+
+    // ---- 人間らしさ（12.9） ----
+    const val JITTER_KICK_SEC = 0.0015
+    const val JITTER_BASS_SEC = 0.003
+    const val JITTER_SNARE_SEC = 0.003
+    const val JITTER_KEYS_SEC = 0.006
+    const val JITTER_HAT_SEC = 0.006
+    const val JITTER_LEAD_SEC = 0.004
+    const val BACKBEAT_DELAY_SEC = 0.005
+    const val VELOCITY_VARIATION = 0.1
+    const val PITCH_VARIATION = 0.02
+    /** 同じ楽器の発音の最小間隔 */
+    const val MIN_ONSET_GAP_SEC = 0.004
+
+    // ---- デモ再生 ----
     const val DEMO_SEED = 20_260_926
+    /** テンポの初期値（最初の場面が決まるまで） */
+    const val DEMO_BPM = WALK_BPM
 
     // ---- 伴奏（12.7） ----
     const val KEYS_STAGGER_SEC = 0.007
@@ -167,6 +217,10 @@ object FusionConstants {
     const val OUTPUT_GAIN = 1.0
 
     // ---- 終わり・つなぎ ----
+    /** 停止ボタン：それまでの演奏を消す時間（キメとぶつからないよう短く） */
+    const val ENDING_CROSSFADE_SEC = 0.5
+    /** 停止ボタンのキメの小節数 */
+    const val ENDING_KIME_BARS = 2
     /** 終わりに鳴らすトニック DM9 */
     const val TONIC_ROOT_PC = 2
     const val ENDING_FADE_SEC = 12.0
