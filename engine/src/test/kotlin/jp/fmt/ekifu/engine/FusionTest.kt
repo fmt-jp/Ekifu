@@ -254,7 +254,12 @@ class FusionComposerTest {
         assertEquals(Phase.START, blocks[0].phase)
         val first = eventsIn(events, blocks[0])
         assertTrue(first.none { it is LeadNote }, "始まりのブロックでリードが鳴っている")
-        assertTrue(first.filterIsInstance<DrumHit>().all { it.kind == DrumKind.HAT || it.kind == DrumKind.OPEN_HAT })
+        // 最後の小節は道中への呼び込み（スネアとキック）
+        val lastBarSec = blocks[0].startSec + (F.STEPS_PER_BLOCK - F.STEPS_PER_BAR - 0.5) * blocks[0].stepSec
+        assertTrue(
+            first.filterIsInstance<DrumHit>().filter { it.timeSec < lastBarSec }
+                .all { it.kind == DrumKind.HAT || it.kind == DrumKind.OPEN_HAT },
+        )
         assertEquals(F.START_HEAT, blocks[0].heat)
         assertEquals(Phase.JOURNEY, blocks[1].phase)
         assertTrue(eventsIn(events, blocks[1]).any { it is LeadNote })

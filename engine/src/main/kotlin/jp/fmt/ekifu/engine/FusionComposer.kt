@@ -20,12 +20,13 @@ data class FusionBlock(
     val section: FusionSection,
     val chords: List<FusionChord>,
     val heat: Double,
-    /** キメを打つ小節（0始まり） */
-    val kimeBars: Set<Int>,
+    /** キメを打つ小節（0始まり）とリズム型 */
+    val kimes: Map<Int, FusionKime>,
     val scene: Scene,
     val place: Place?,
     val cutoffHz: Double,
 ) {
+    val kimeBars: Set<Int> get() = kimes.keys
     val bpm: Double get() = 60.0 / (stepSec * 4)
     val endSec: Double get() = startSec + stepSec * F.STEPS_PER_BLOCK
 
@@ -35,9 +36,35 @@ data class FusionBlock(
 }
 
 /**
+ * キメのリズム型（1小節16ステップのうち全員で打つ位置）。参照実装にあるのは [REFERENCE] だけで、ほかは仕様外・要調整。
+ * [BREAK] は頭の1発のあと伴奏が止まってリードだけが残り、最後の1拍でスネアが次へつなぐ。
+ */
+enum class FusionKime(val label: String, vararg val hits: Int) {
+    REFERENCE("基本", 0, 3, 6, 8, 10, 12),
+    THREE_THREE_TWO("3・3・2", 0, 3, 6, 8, 11, 14),
+    OFFBEAT("裏から", 2, 4, 7, 10, 12),
+    TRIPLE("3連打", 0, 1, 2, 6, 7, 8, 12),
+    BREAK("ブレイク", 0),
+}
+
+/** フェーズの変わり目で、前のブロックの最後の小節に入れるつなぎ（仕様外・要調整） */
+enum class FusionTransition(val label: String) {
+    /** 接近へ：小節まるごとスネアの16分で盛り上げ、リードが駆け上がる */
+    BUILD_UP("盛り上げ"),
+    /** 道中へ：小節の後半からスネアの16分とベースの歩みで次の頭へ */
+    PICK_UP("呼び込み"),
+    /** 到着へ：頭の1発で止まり、リードのハイトーンだけを残してスネアで到着へ */
+    BREAK_IN("ブレイク"),
+    /** 滞在へ：伸ばした和音の上でハイハットだけを細くしていく */
+    SETTLE("落ち着き"),
+}
+
+/**
  * 曲調「フュージョン」の作曲（12.3〜12.7、12.9）。音符イベントだけを決め、波形は作らない。
  *
  * - 8小節（128ステップ）のブロック単位で組み立てる。入力（場面・地点）は次のブロックの頭で反映する
+ * - ブロックの最後の小節は、鳴る直前（[C.COMPOSE_LOOKAHEAD_SEC] 前）まで出さずに持っておく。
+ *   それまでにフェーズが変わると決まっていたら、その小節をフェーズのつなぎ（[FusionTransition]）に差し替える
  * - 同じシード・同じ入力なら同じイベント列。copy() で状態をまるごと複製できる（チャンクの作り直し用）
  */
 class FusionComposer(seed: Int, private val config: FusionComposerConfig = FusionComposerConfig()) : ComposerInput {
@@ -67,6 +94,17 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
     private var motif: MotifShape? = null
     /** 鍵盤：前の小節で次の和音を「食った」か */
     private var pushed = false
+
+    /** キメの型・つなぎの揺らし用（ほかの作曲の乱数の並びを変えないよう別にする） */
+    private var kimeRng = Mulberry32(seed xor KIME_SEED_SALT)
+    private var lastKime: FusionKime? = null
+    /** 作り置きのブロックの最後の小節 */
+    private var tail: Tail? = null
+
+    private class Tail(val block: FusionBlock, val startSec: Double, val events: List<FusionEvent>)
+
+    /** 最後の小節をつなぎに差し替えたブロック（画面の表示用。最近のものだけ） */
+    private var transitions = mapOf<Int, FusionTransition>()
 
     // ---------------- 入力 ----------------
 
@@ -104,10 +142,17 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
 
     // ---------------- 出力 ----------------
 
-    /** tSec まで作曲を進め、新しく決まったイベントを返す（ブロック単位でまとめて作る） */
+    /** tSec まで作曲を進め、新しく決まったイベントを返す（ブロック単位でまとめて作る。最後の小節だけは直前に出す） */
     fun composeUntil(tSec: Double): List<FusionEvent> {
         out.clear()
-        while (nextBlockSec < tSec) composeBlock()
+        while (true) {
+            val t = tail
+            when {
+                t != null && t.startSec < tSec -> resolveTail(t)
+                nextBlockSec < tSec -> composeBlock()
+                else -> break
+            }
+        }
         return out.toList()
     }
 
@@ -135,7 +180,14 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
         it.cur = cur
         it.motif = motif
         it.pushed = pushed
+        it.kimeRng = kimeRng.copy()
+        it.lastKime = lastKime
+        it.tail = tail
+        it.transitions = transitions
     }
+
+    /** そのブロックの最後の小節に入れたつなぎ（なければ null） */
+    fun transitionOf(block: FusionBlock): FusionTransition? = transitions[block.index]
 
     // ---------------- ブロックの設計 ----------------
 
@@ -178,18 +230,20 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
             else -> FusionSection.A
         }
         val chords = if (phase == Phase.ARRIVE) ARRIVAL_CHORDS else section.chords
-        val kimeBars = when (phase) {
-            Phase.JOURNEY, Phase.APPROACH -> if (index % 2 == 1) setOf(7) else emptySet()
-            Phase.INTERLUDE -> setOf(6, 7)
-            Phase.ARRIVE -> setOf(ARRIVAL_KIME_BAR)
-            else -> emptySet()
+        val kimes = when (phase) {
+            Phase.JOURNEY, Phase.APPROACH -> if (index % 2 == 1) mapOf(7 to pickKime()) else emptyMap()
+            // 区切りは2小節続けて違う型で。1小節目はブレイクにしない
+            Phase.INTERLUDE -> pickKime(allowBreak = false).let { first -> mapOf(6 to first, 7 to pickKime()) }
+            // 到着と停止のキメは参照実装の6発のまま
+            Phase.ARRIVE -> mapOf(ARRIVAL_KIME_BAR to FusionKime.REFERENCE)
+            else -> emptyMap()
         }
         val cutoff = when (scene.sun) {
             SunLevel.NIGHT -> F.NIGHT_CUTOFF_HZ
             SunLevel.TWILIGHT -> F.TWILIGHT_CUTOFF_HZ
             SunLevel.DAY -> F.DAY_CUTOFF_HZ
         }
-        val block = FusionBlock(index, start, stepSec, phase, section, chords, heat, kimeBars, scene, place, cutoff)
+        val block = FusionBlock(index, start, stepSec, phase, section, chords, heat, kimes, scene, place, cutoff)
         blocks = (blocks + block).takeLast(KEEP_BLOCKS)
         nextBlockSec = block.endSec
 
@@ -215,7 +269,46 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
                 Lead(block, firstMotif, events).write()
             }
         }
-        out += Humanizer(Mulberry32(rng.nextInt(Int.MAX_VALUE))).apply(events, block)
+        val all = Humanizer(Mulberry32(rng.nextInt(Int.MAX_VALUE))).apply(events, block)
+        // 最後の小節は持っておく（揺らしで少し早まった音も含めるよう、半ステップ手前で分ける）
+        val tailStart = block.startSec + (F.STEPS_PER_BLOCK - F.STEPS_PER_BAR - 0.5) * stepSec
+        all.filter { it.timeSec < tailStart }.forEach { out += it }
+        tail = Tail(block, tailStart, all.filter { it.timeSec >= tailStart })
+    }
+
+    /** 最後の小節を出す。次のブロックでフェーズが変わるなら、つなぎに差し替える */
+    private fun resolveTail(t: Tail) {
+        tail = null
+        val kind = transitionFor(t.block.phase, peekNextPhase(t.block.endSec))
+        if (kind == null) {
+            out += t.events
+            return
+        }
+        transitions = (transitions + (t.block.index to kind)).filterKeys { it > t.block.index - KEEP_BLOCKS }
+        val events = ArrayList<FusionEvent>()
+        Transition(t.block, kind, nextFirstChord(), events).write()
+        out += Humanizer(Mulberry32(kimeRng.nextInt(Int.MAX_VALUE))).apply(events, t.block)
+    }
+
+    private fun transitionFor(from: Phase, to: Phase): FusionTransition? = when {
+        from == to -> null
+        to == Phase.ARRIVE -> FusionTransition.BREAK_IN
+        to == Phase.APPROACH -> FusionTransition.BUILD_UP
+        // 区切りとの行き来は、区切りのキメがつなぎになる
+        to == Phase.JOURNEY && from != Phase.INTERLUDE -> FusionTransition.PICK_UP
+        // 到着のあとは DM9 を伸ばしてそのまま滞在へ
+        to == Phase.STAY && from != Phase.ARRIVE -> FusionTransition.SETTLE
+        else -> null
+    }
+
+    /** キメの型を選ぶ（前のキメと同じ型は続けない） */
+    private fun pickKime(allowBreak: Boolean = true): FusionKime {
+        val candidates = FusionKime.entries.filter { it != lastKime && (allowBreak || it != FusionKime.BREAK) }
+        val total = candidates.sumOf { F.KIME_WEIGHTS[it.ordinal] }
+        var x = kimeRng.nextDouble() * total
+        val k = candidates.firstOrNull { x -= F.KIME_WEIGHTS[it.ordinal]; x <= 0 } ?: candidates.last()
+        lastKime = k
+        return k
     }
 
     private fun nextPhase(index: Int, start: Double): Phase {
@@ -224,22 +317,23 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
             return it
         }
         if (index == 0) return Phase.START
-        return when (phase) {
-            Phase.START -> {
-                val p = deferredApproach
-                if (p != null) {
-                    place = p
-                    deferredApproach = null
-                    Phase.APPROACH
-                } else {
-                    Phase.JOURNEY
-                }
-            }
-            Phase.JOURNEY -> if (start - journeyStartSec >= config.interludeEverySec) Phase.INTERLUDE else Phase.JOURNEY
-            Phase.INTERLUDE -> Phase.JOURNEY
-            Phase.ARRIVE -> Phase.STAY
-            else -> phase
+        val next = automaticNext(start)
+        if (phase == Phase.START && next == Phase.APPROACH) {
+            place = deferredApproach
+            deferredApproach = null
         }
+        return next
+    }
+
+    /** start から始まる次のブロックのフェーズ（いまの入力で予想する。状態は変えない） */
+    private fun peekNextPhase(start: Double): Phase = pendingPhase ?: automaticNext(start)
+
+    private fun automaticNext(start: Double): Phase = when (phase) {
+        Phase.START -> if (deferredApproach != null) Phase.APPROACH else Phase.JOURNEY
+        Phase.JOURNEY -> if (start - journeyStartSec >= config.interludeEverySec) Phase.INTERLUDE else Phase.JOURNEY
+        Phase.INTERLUDE -> Phase.JOURNEY
+        Phase.ARRIVE -> Phase.STAY
+        else -> phase
     }
 
     /** 熱量（12.5） */
@@ -264,10 +358,139 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
     }
 
     /** 次のブロックの最初の和音（最後の小節で「食う」ため。いまの入力で予想する） */
-    private fun nextFirstChord(): FusionChord = when (pendingPhase ?: phase) {
+    private fun nextFirstChord(): FusionChord = when (peekNextPhase(nextBlockSec)) {
         Phase.APPROACH -> FusionSection.B.chords[0]
-        Phase.JOURNEY, Phase.INTERLUDE, Phase.START -> JOURNEY_CYCLE[journeySection % JOURNEY_CYCLE.size].chords[0]
+        // 道中・区切りが続くなら循環の続き、ほかから道中に入るなら A から
+        Phase.JOURNEY, Phase.INTERLUDE ->
+            if (phase == Phase.JOURNEY || phase == Phase.INTERLUDE) JOURNEY_CYCLE[journeySection % JOURNEY_CYCLE.size].chords[0]
+            else FusionSection.A.chords[0]
         else -> FusionSection.A.chords[0]
+    }
+
+    /** 和音を下の音から7msずつずらして鳴らす */
+    private fun keys(
+        out: MutableList<FusionEvent>, block: FusionBlock, timeSec: Double, lengthSteps: Double, chord: FusionChord, velocity: Double,
+    ) {
+        chord.keysVoicing.forEachIndexed { i, midi ->
+            out += PolyNote(
+                timeSec + i * F.KEYS_STAGGER_SEC, PolyPart.BRASS, midi,
+                lengthSteps * block.stepSec * F.KEYS_LENGTH_FACTOR, velocity,
+            )
+        }
+    }
+
+    // ---------------- フェーズのつなぎ（仕様外・要調整） ----------------
+
+    /** 最後の小節をつなぎに差し替える。伴奏とリードを書く */
+    private inner class Transition(
+        val block: FusionBlock,
+        val kind: FusionTransition,
+        val nx: FusionChord,
+        val out: MutableList<FusionEvent>,
+    ) {
+        val base = (F.STEPS_PER_BLOCK - F.STEPS_PER_BAR).toDouble()
+        val ch = block.chords[F.BARS_PER_BLOCK - 1]
+        fun t(step: Double) = block.startSec + (base + step) * block.stepSec
+        fun t(step: Int) = t(step.toDouble())
+
+        fun write() {
+            when (kind) {
+                FusionTransition.BUILD_UP -> {
+                    keys(out, block, t(0), 6.0, ch, 0.7)
+                    intArrayOf(8, 10, 12).forEachIndexed { i, s -> keys(out, block, t(s), 1.0, ch, 0.55 + 0.1 * i) }
+                    keys(out, block, t(14), 2.0, nx, 0.85)
+                    pushed = true
+                    bass(0 to ch.bassRoot, 8 to ch.bassRoot, 10 to ch.bassRoot + 7, 12 to nx.bassRoot - 2, 14 to nx.bassRoot - 1)
+                    intArrayOf(0, 8, 12).forEach { out += DrumHit(t(it), DrumKind.KICK, if (it == 0) 1.0 else 0.85) }
+                    for (s in 0 until F.BUILD_FULL_FROM step 2) out += DrumHit(t(s), DrumKind.HAT, 0.5)
+                    snareRoll(F.BUILD_FULL_FROM)
+                    // リード：小節の2拍目から16分で駆け上がる
+                    var m = maxOf(F.LEAD_MIN_MIDI, minOf(cur, F.KIME_START_CAP) - F.KIME_START_DROP)
+                    val from = F.BUILD_LEAD_FROM
+                    val notes = (from until F.STEPS_PER_BAR).mapIndexed { i, s ->
+                        m = stepScale(m, ch, 1)
+                        LeadStep(base + s, 0.95, m, 0.6 + 0.3 * i / (F.STEPS_PER_BAR - from - 1).coerceAtLeast(1))
+                    }
+                    cur = m
+                    writeLead(block, notes, out)
+                }
+                FusionTransition.PICK_UP -> {
+                    keys(out, block, t(0), 6.0, ch, 0.6)
+                    keys(out, block, t(14), 2.0, nx, 0.8)
+                    pushed = true
+                    bass(
+                        0 to ch.bassRoot, 4 to ch.bassRoot, 6 to ch.bassRoot + 12, 8 to ch.bassRoot, 10 to ch.bassRoot + 7,
+                        12 to nx.bassRoot - 2, 14 to nx.bassRoot - 1,
+                    )
+                    intArrayOf(0, 6, 8, 12).forEach { out += DrumHit(t(it), DrumKind.KICK, if (it == 0) 1.0 else 0.8) }
+                    for (s in 0 until F.BUILD_HALF_FROM step 2) out += DrumHit(t(s), DrumKind.HAT, if (s % 4 == 0) 0.7 else 0.45)
+                    out += DrumHit(t(4), DrumKind.SNARE, 0.9)
+                    snareRoll(F.BUILD_HALF_FROM)
+                    // リードはひと呼吸（次のブロックの頭から入る）
+                }
+                FusionTransition.BREAK_IN -> {
+                    hitAndStop()
+                    val target = nearestPc(F.HIGH_TONE_TARGET, ch.tensionPcs() + ch.targetPcs(), 0, F.HIGH_TONE_MIN, F.LEAD_MAX_MIDI)
+                    cur = target
+                    writeLead(
+                        block,
+                        listOf(LeadStep(base + 2, 10.0, target, 0.95, vibrato = true, glideSec = F.GLIDE_HIGH_TONE_SEC)),
+                        out,
+                    )
+                }
+                FusionTransition.SETTLE -> {
+                    keys(out, block, t(0), 14.0, ch, 0.6)
+                    pushed = false
+                    bass(0 to ch.bassRoot)
+                    out += DrumHit(t(0), DrumKind.KICK, 0.9)
+                    for (s in 0 until F.STEPS_PER_BAR - 1 step 2) {
+                        out += DrumHit(t(s), DrumKind.HAT, F.SETTLE_HAT_VEL_FROM + (F.SETTLE_HAT_VEL_TO - F.SETTLE_HAT_VEL_FROM) * s / 14.0)
+                    }
+                    val home = land(cur, ch, -1)
+                    cur = home
+                    writeLead(block, listOf(LeadStep(base, 12.0, home, 0.7, fall = true, vibrato = true)), out)
+                }
+            }
+        }
+
+        /** 頭の1発で全員が止まり、最後の1拍でスネアが次へつなぐ */
+        private fun hitAndStop() {
+            keys(out, block, t(0), 1.5, ch, 0.9)
+            pushed = false
+            out += PolyNote(t(0), PolyPart.BASS, ch.bassRoot, 1.5 * block.stepSec, 1.0)
+            out += DrumHit(t(0), DrumKind.KICK, 1.0)
+            out += DrumHit(t(0), DrumKind.SNARE, 0.9)
+            out += DrumHit(t(0), DrumKind.CRASH, 0.9)
+            breakPickup(block, base, out)
+        }
+
+        /** from から小節の終わりまで、スネアの16分をだんだん強く */
+        private fun snareRoll(from: Int) {
+            val n = F.STEPS_PER_BAR - from
+            for (s in from until F.STEPS_PER_BAR) {
+                val k = if (n > 1) (s - from).toDouble() / (n - 1) else 1.0
+                out += DrumHit(t(s), DrumKind.SNARE, F.BUILD_SNARE_VEL_FROM + (F.BUILD_SNARE_VEL_TO - F.BUILD_SNARE_VEL_FROM) * k)
+            }
+        }
+
+        /** ベース：(ステップ to 音) を順に。長さは次の音（最後は小節の終わり）まで */
+        private fun bass(vararg notes: Pair<Int, Int>) {
+            notes.forEachIndexed { i, (s, midi) ->
+                val steps = (notes.getOrNull(i + 1)?.first ?: F.STEPS_PER_BAR) - s
+                out += PolyNote(t(s), PolyPart.BASS, midi, steps * F.BASS_LENGTH_FACTOR * block.stepSec, if (i == 0) 1.0 else 0.8)
+            }
+        }
+    }
+
+    /** ブレイクの最後の1拍：スネアの16分4発をだんだん強く */
+    private fun breakPickup(block: FusionBlock, barBase: Double, out: MutableList<FusionEvent>) {
+        for (s in F.BREAK_PICKUP_FROM until F.STEPS_PER_BAR) {
+            val k = (s - F.BREAK_PICKUP_FROM).toDouble() / (F.STEPS_PER_BAR - 1 - F.BREAK_PICKUP_FROM)
+            out += DrumHit(
+                block.startSec + (barBase + s) * block.stepSec, DrumKind.SNARE,
+                F.BUILD_SNARE_VEL_FROM + 0.2 + (F.BUILD_SNARE_VEL_TO - F.BUILD_SNARE_VEL_FROM - 0.2) * k,
+            )
+        }
     }
 
     // ---------------- 伴奏（12.7） ----------------
@@ -286,8 +509,8 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
                         if (b == ARRIVAL_KIME_BAR + 1) landOnTonic(o)
                         pushed = false
                     }
-                    b in block.kimeBars -> {
-                        kime(o, ch, crashOnLast = b == block.kimeBars.max())
+                    b in block.kimes -> {
+                        kime(o, ch, block.kimes.getValue(b), crashOnLast = b == block.kimeBars.max())
                         pushed = false
                     }
                     else -> groove(b, o, ch, nx)
@@ -304,18 +527,22 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
             out += DrumHit(t(o), DrumKind.CRASH, 0.9)
         }
 
-        private fun kime(o: Double, ch: FusionChord, crashOnLast: Boolean) {
-            KIME_HITS.forEachIndexed { i, k ->
-                val last = i == KIME_HITS.size - 1
-                keys(t(o + k), if (last) 3.0 else 0.6, ch, 0.8)
+        private fun kime(o: Double, ch: FusionChord, kime: FusionKime, crashOnLast: Boolean) {
+            val hits = kime.hits
+            hits.forEachIndexed { i, k ->
+                val last = i == hits.size - 1
+                val rest = (F.STEPS_PER_BAR - k).toDouble()
+                val isBreak = kime == FusionKime.BREAK
+                keys(t(o + k), if (isBreak) 1.5 else if (last) minOf(3.0, rest) else 0.6, ch, 0.8)
                 out += PolyNote(
                     t(o + k), PolyPart.BASS, if (i % 2 == 1) ch.bassRoot + 12 else ch.bassRoot,
-                    (if (last) 4.0 else 1.0) * block.stepSec, 0.95,
+                    (if (isBreak) 1.5 else if (last) minOf(4.0, rest) else 1.0) * block.stepSec, 0.95,
                 )
                 out += DrumHit(t(o + k), DrumKind.KICK, 1.0)
                 out += DrumHit(t(o + k), DrumKind.SNARE, 0.9)
-                if (last && crashOnLast) out += DrumHit(t(o + k), DrumKind.CRASH, 0.9)
+                if (last && (crashOnLast || kime == FusionKime.BREAK)) out += DrumHit(t(o + k), DrumKind.CRASH, 0.9)
             }
+            if (kime == FusionKime.BREAK) breakPickup(block, o, out)
         }
 
         private fun groove(b: Int, o: Double, ch: FusionChord, nx: FusionChord) {
@@ -384,15 +611,8 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
             if (drumsFull && (b == 0 || (b == 4 && h > 0.6))) out += DrumHit(t(o), DrumKind.CRASH, 0.8)
         }
 
-        /** 和音を下の音から7msずつずらして鳴らす */
-        private fun keys(timeSec: Double, lengthSteps: Double, chord: FusionChord, velocity: Double) {
-            chord.keysVoicing.forEachIndexed { i, midi ->
-                out += PolyNote(
-                    timeSec + i * F.KEYS_STAGGER_SEC, PolyPart.BRASS, midi,
-                    lengthSteps * block.stepSec * F.KEYS_LENGTH_FACTOR, velocity,
-                )
-            }
-        }
+        private fun keys(timeSec: Double, lengthSteps: Double, chord: FusionChord, velocity: Double) =
+            keys(out, block, timeSec, lengthSteps, chord, velocity)
     }
 
     // ---------------- リード（12.6） ----------------
@@ -438,7 +658,7 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
                 res.notes.forEach { if (it.step < endLead) notes += it }
                 pos = maxOf(pos + 1, res.end)
             }
-            if (firstKime != null) for (bar in block.kimeBars.sorted()) notes += kimeLead(bar)
+            if (firstKime != null) for (bar in block.kimeBars.sorted()) notes += kimeLead(bar, block.kimes.getValue(bar))
             writeLead(block, notes, events)
         }
 
@@ -575,15 +795,36 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
         private fun breath(pos: Double) = Result(emptyList(), pos + 2 + floor(rng.nextDouble() * 4 * (1 - h)))
 
         /** キメ：着地に使う音を下から順に上っていく。最後の音は4ステップ伸ばしてビブラート */
-        private fun kimeLead(bar: Int): List<LeadStep> {
+        private fun kimeLead(bar: Int, kime: FusionKime): List<LeadStep> {
+            if (kime == FusionKime.BREAK) return breakLead(bar)
             val base = bar * F.STEPS_PER_BAR.toDouble()
             val ch = at(base)
+            val hits = kime.hits
             var m = maxOf(F.LEAD_MIN_MIDI, minOf(cur, F.KIME_START_CAP) - F.KIME_START_DROP)
-            return KIME_HITS.mapIndexed { i, k ->
+            return hits.mapIndexed { i, k ->
                 m = land(m, ch, 1)
-                val last = i == KIME_HITS.size - 1
-                LeadStep(base + k, if (last) 4.0 else (KIME_HITS[i + 1] - k) * 0.6, m, 0.9, vibrato = last)
+                val last = i == hits.size - 1
+                LeadStep(base + k, if (last) 4.0 else (hits[i + 1] - k) * 0.6, m, 0.9, vibrato = last)
             }.also { cur = m }
+        }
+
+        /** ブレイク：伴奏が止まったところをリードだけで駆け上がり、上で伸ばす（熱量が低いときは8分で） */
+        private fun breakLead(bar: Int): List<LeadStep> {
+            val base = bar * F.STEPS_PER_BAR.toDouble()
+            val ch = at(base)
+            val sub = if (h > F.BREAK_FAST_HEAT) 1.0 else 2.0
+            val n = if (sub == 1.0) 9 else 5
+            var m = maxOf(F.LEAD_MIN_MIDI, minOf(cur, F.KIME_START_CAP) - F.KIME_START_DROP)
+            val notes = ArrayList<LeadStep>()
+            for (i in 0 until n) {
+                m = stepScale(m, ch, 1)
+                notes += LeadStep(base + 1 + i * sub, sub * 0.9, m, 0.65 + if (i % 4 == 0) 0.2 else 0.0)
+            }
+            val landStep = 1 + n * sub
+            val top = land(m, ch, 1)
+            notes += LeadStep(base + landStep, F.BREAK_PICKUP_FROM + 2 - landStep, top, 0.9, vibrato = true)
+            cur = top
+            return notes
         }
     }
 
@@ -679,7 +920,9 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
             FusionSection.A.chords.take(ARRIVAL_KIME_BAR) +
                 FusionChord(9, FusionQuality.SUS4, 2) + FusionChord.TONIC + FusionChord.TONIC
 
-        val KIME_HITS = intArrayOf(0, 3, 6, 8, 10, 12)
+        /** 参照実装のキメ（到着と停止はこれだけを使う） */
+        val KIME_HITS: IntArray = FusionKime.REFERENCE.hits
+        private const val KIME_SEED_SALT = 0x4B1E5EED
         private val BACKBEAT = intArrayOf(4, 12)
         private val GHOST_STEPS = intArrayOf(2, 7, 9, 15)
         private val SEQ_CELLS = listOf(intArrayOf(0, 1, 2, 4), intArrayOf(0, 2, 1, 3), intArrayOf(0, -1, 1, 2), intArrayOf(2, 1, 0, -1))

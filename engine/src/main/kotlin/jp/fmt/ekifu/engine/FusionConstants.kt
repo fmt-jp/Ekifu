@@ -221,6 +221,25 @@ object FusionConstants {
     const val ENDING_CROSSFADE_SEC = 0.5
     /** 停止ボタンのキメの小節数 */
     const val ENDING_KIME_BARS = 2
+
+    // ---- キメの型とフェーズのつなぎ（仕様外・要調整。参照実装のキメは1種類で、フェーズのつなぎはない） ----
+    /** キメの型を選ぶ重み（FusionKime の順：基本・3-3-2・裏から・3連打・ブレイク）。前と同じ型は続けない */
+    val KIME_WEIGHTS = doubleArrayOf(3.0, 2.0, 2.0, 2.0, 1.5)
+    /** ブレイクのリードをこの熱量より上で16分、以下で8分にする */
+    const val BREAK_FAST_HEAT = 0.5
+    /** ブレイクの最後にスネアで次へつなぐ位置（ステップ） */
+    const val BREAK_PICKUP_FROM = 12
+    /** 盛り上げ（接近へ）のスネアの16分を始めるステップ。リードの駆け上がりを始めるステップ */
+    const val BUILD_FULL_FROM = 0
+    const val BUILD_LEAD_FROM = 4
+    /** 呼び込み（道中へ）のスネアの16分を始めるステップ */
+    const val BUILD_HALF_FROM = 8
+    /** つなぎのスネアの16分の強さ（始め → 終わり） */
+    const val BUILD_SNARE_VEL_FROM = 0.3
+    const val BUILD_SNARE_VEL_TO = 0.95
+    /** 落ち着き（滞在へ）のハイハットの強さ（始め → 終わり） */
+    const val SETTLE_HAT_VEL_FROM = 0.6
+    const val SETTLE_HAT_VEL_TO = 0.2
     /** 終わりに鳴らすトニック DM9 */
     const val TONIC_ROOT_PC = 2
     const val ENDING_FADE_SEC = 12.0

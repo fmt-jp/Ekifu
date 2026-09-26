@@ -73,7 +73,7 @@ class FusionEngine private constructor(
             composer = ComposerStatus(
                 phase = block?.phase ?: Phase.START,
                 chord = null,
-                chordLabel = if (block != null && chord != null) "${block.section.name}・${chord.name}" else "—",
+                chordLabel = if (block != null && chord != null) "${block.section.name}・${chord.name}${barLabel(block, t)}" else "—",
                 beatSec = (block?.stepSec ?: composer.stepSec) * 4,
                 noteProb = block?.heat ?: 0.0,
                 masterCutoffHz = block?.cutoffHz ?: F.DAY_CUTOFF_HZ,
@@ -88,6 +88,13 @@ class FusionEngine private constructor(
             stopping = false,
             finished = false,
         )
+    }
+
+    /** デバッグ表示：いまの小節がキメ・つなぎならその型 */
+    private fun barLabel(block: FusionBlock, t: Double): String {
+        val bar = block.barAt(t)
+        if (bar == F.BARS_PER_BLOCK - 1) composer.transitionOf(block)?.let { return "（つなぎ：${it.label}）" }
+        return block.kimes[bar]?.let { "（キメ：${it.label}）" } ?: ""
     }
 
     override fun apply(action: (ComposerInput) -> Unit) = action(composer)
