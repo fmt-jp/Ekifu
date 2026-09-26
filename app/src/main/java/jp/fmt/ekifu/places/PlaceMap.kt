@@ -7,6 +7,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
@@ -77,7 +78,8 @@ fun PlaceMap(
 
     AndroidView(
         factory = { mapView },
-        modifier = modifier,
+        // osmdroid は拡大・縮小のときに自分の枠の外まで描くので、枠で切り取る
+        modifier = modifier.clipToBounds(),
         update = { mv ->
             mv.overlays.clear()
             mv.overlays += MapEventsOverlay(object : MapEventsReceiver {
