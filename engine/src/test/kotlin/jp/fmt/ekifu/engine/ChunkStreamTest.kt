@@ -170,5 +170,19 @@ class ChunkStreamTest {
         assertTrue(maxBuffered <= C.BUFFER_HIGH_SEC)
     }
 
+    @Test
+    fun approachIsHeardWithinTwoMinutesOfEnteringOuterCircle() {
+        // 位置の取得は1分ごと。入った直後に取れなかった最悪の場合でも、判定から音に出るまで30秒以内なら2分に収まる
+        val engine = MusicEngine(seed = 5).also { e -> e.apply { it.setScene(DAY_WALK) } }
+        val stream = ChunkStream(engine)
+        pump(stream, 90.0)
+        val postedAt = stream.status().playSec
+        stream.post { it.approach(Place("p", "公園", Mood.CALM, 99)) }
+        var heardAt: Double? = null
+        pump(stream, 40.0) { if (heardAt == null && it.engine?.composer?.phase == Phase.APPROACH) heardAt = it.playSec }
+        val delay = heardAt!! - postedAt
+        assertTrue(delay <= 30.0, "反映の遅れ: $delay 秒")
+    }
+
     private fun sec(s: Double) = (s * sr).toInt()
 }

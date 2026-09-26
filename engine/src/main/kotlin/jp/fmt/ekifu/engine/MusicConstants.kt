@@ -227,6 +227,12 @@ object MusicConstants {
     /** 画面表示用に状態を記録する間隔 */
     const val STATUS_INTERVAL_SEC = 0.25
 
+    // ---- 地点のテーマの試聴（仕様外・要調整） ----
+    const val PREVIEW_SEC = 7.0
+    const val PREVIEW_FADE_SEC = 2.0
+    const val PREVIEW_THEME_START_SEC = 0.6
+    const val PREVIEW_PAD_ATTACK_SEC = 0.6
+
     // ---- デモ再生（9章） ----
     /** 5分の場面を30秒に縮める */
     const val DEMO_SCENE_SEC = 30.0

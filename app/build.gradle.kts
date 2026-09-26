@@ -15,8 +15,8 @@ android {
         applicationId = "jp.fmt.ekifu"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.3.0-stage3"
+        versionCode = 4
+        versionName = "0.4.0-stage4"
     }
 
     signingConfigs {
@@ -68,4 +68,6 @@ dependencies {
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
     ksp("androidx.room:room-compiler:2.6.1")
+    // 地点登録の地図（OpenStreetMap。API キー不要）
+    implementation("org.osmdroid:osmdroid-android:6.1.20")
 }

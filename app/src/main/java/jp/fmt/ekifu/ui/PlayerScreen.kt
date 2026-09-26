@@ -38,6 +38,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import jp.fmt.ekifu.engine.DemoScript
 import jp.fmt.ekifu.engine.EngineStatus
 import jp.fmt.ekifu.engine.Phase
+import jp.fmt.ekifu.engine.PlaceTracker
 import jp.fmt.ekifu.engine.StreamStatus
 import jp.fmt.ekifu.playback.PlaybackBus
 import jp.fmt.ekifu.playback.PlaybackMode
@@ -50,6 +51,7 @@ fun PlayerScreen(
     onResume: () -> Unit,
     onPause: () -> Unit,
     onStop: () -> Unit,
+    onOpenPlaces: () -> Unit,
 ) {
     val ui by PlaybackBus.ui.collectAsStateWithLifecycle()
     val stream = ui.stream
@@ -66,18 +68,21 @@ fun PlayerScreen(
             .padding(horizontal = 20.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Column {
-            Text(
-                "ekifu",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
-            Text(
-                "場所が楽譜になる",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
-            )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "ekifu",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground,
+                )
+                Text(
+                    "場所が楽譜になる",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+                )
+            }
+            OutlinedButton(onClick = onOpenPlaces) { Text("登録地点") }
         }
 
         NowPlayingCard(ui, status, nowMs)
@@ -158,8 +163,19 @@ private fun NowPlayingCard(ui: PlaybackBus.Ui, status: EngineStatus?, nowMs: Lon
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            placeText(status)?.let {
-                Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+            val approachText = placeText(status)
+            if (approachText != null) {
+                Text(approachText, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+            } else {
+                ui.scene?.let { sc ->
+                    if (sc.nearestName != null && sc.nearestDistanceM != null) {
+                        Text(
+                            "一番近い登録地点：${sc.nearestName}（${formatDistance(sc.nearestDistanceM)}）",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
             }
             if (ui.scene?.hasPermission == false) {
                 Text(
@@ -216,6 +232,25 @@ private fun DebugCard(ui: PlaybackBus.Ui, stream: StreamStatus, status: EngineSt
                 )
             }
             DebugRow("地点", c.place?.let { "${it.name}（${it.mood.label}）" } ?: "なし")
+            ui.scene?.let { sc ->
+                DebugRow(
+                    "一番近い地点",
+                    if (sc.nearestName != null && sc.nearestDistanceM != null) {
+                        "${sc.nearestName} ${formatDistance(sc.nearestDistanceM)}"
+                    } else {
+                        "—"
+                    },
+                )
+                DebugRow(
+                    "判定",
+                    when (sc.trackedState) {
+                        PlaceTracker.State.NONE -> "なし"
+                        PlaceTracker.State.APPROACHING -> "${sc.trackedName}に接近中"
+                        PlaceTracker.State.ARRIVED -> "${sc.trackedName}に到着"
+                    },
+                )
+                DebugRow("位置の取得間隔", sc.locationIntervalSec?.let { "${it / 60}分" } ?: "—")
+            }
             DebugRow("鳴っている音", "${status.activeVoices}")
             DebugRow("バッファ残量", "%.1f 秒".format(stream.bufferedSec))
             DebugRow("バッファ不足", "${stream.underruns} 回")
@@ -291,6 +326,9 @@ private fun placeText(status: EngineStatus): String? {
         else -> null
     }
 }
+
+private fun formatDistance(m: Double): String =
+    if (m < 1000) "${m.toInt()}m" else "%.1fkm".format(m / 1000)
 
 private fun formatTime(sec: Double): String {
     val s = sec.toInt()

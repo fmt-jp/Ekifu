@@ -18,6 +18,9 @@ import jp.fmt.ekifu.data.Visit
 import jp.fmt.ekifu.engine.Geo
 import jp.fmt.ekifu.engine.LocationFix
 import jp.fmt.ekifu.engine.MusicConstants
+import jp.fmt.ekifu.engine.PlaceConstants
+import jp.fmt.ekifu.engine.PlaceEvent
+import jp.fmt.ekifu.engine.PlaceTracker
 import jp.fmt.ekifu.engine.Scene
 import jp.fmt.ekifu.engine.SceneDecider
 import jp.fmt.ekifu.engine.SceneDecision
@@ -27,6 +30,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -44,6 +48,14 @@ data class SceneUi(
     val nextSceneAtMs: Long? = null,
     /** 最後に位置が取れた時刻 */
     val lastFixAtMs: Long? = null,
+    /** 一番近い登録地点と距離 */
+    val nearestName: String? = null,
+    val nearestDistanceM: Double? = null,
+    /** 追いかけている地点と状態（接近中・到着） */
+    val trackedName: String? = null,
+    val trackedState: PlaceTracker.State = PlaceTracker.State.NONE,
+    /** 位置の取得間隔（秒）。登録地点の近くでは短い */
+    val locationIntervalSec: Int? = null,
 )
 
 /**
@@ -55,6 +67,7 @@ data class SceneUi(
 class SceneSource(
     context: Context,
     private val onScene: (Scene) -> Unit,
+    private val onPlaceEvents: (List<PlaceEvent>) -> Unit,
     private val onUi: (SceneUi) -> Unit,
 ) {
     private val appContext = context.applicationContext
@@ -62,8 +75,12 @@ class SceneSource(
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val fused = LocationServices.getFusedLocationProviderClient(appContext)
-    private val visits = EkifuDatabase.get(appContext).visits()
+    private val db = EkifuDatabase.get(appContext)
+    private val visits = db.visits()
     private val decider = SceneDecider()
+    private val tracker = PlaceTracker()
+    private var placesJob: Job? = null
+    private var intervalMs = 0L
     private val sessionId = System.currentTimeMillis()
     private var pseudoIndex = 0
     private var latest: LocationFix? = null
@@ -72,8 +89,36 @@ class SceneSource(
 
     private val callback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
-            result.lastLocation?.let { latest = LocationFix(it.latitude, it.longitude, it.time) }
+            result.lastLocation?.let { onFix(LocationFix(it.latitude, it.longitude, it.time)) }
         }
+    }
+
+    init {
+        if (hasPermission) {
+            // 登録・編集・削除は再生中でもすぐ判定に反映する
+            placesJob = scope.launch {
+                db.places().observeAll().collect { list -> tracker.setPlaces(list.map { it.toRegistered() }) }
+            }
+        }
+    }
+
+    /** 位置を受け取るたびに登録地点との距離を判定する（場面を決めるのは5分ごと） */
+    private fun onFix(fix: LocationFix) {
+        latest = fix
+        val events = tracker.update(fix)
+        if (events.isNotEmpty()) onPlaceEvents(events)
+        val nearest = tracker.nearest(fix)
+        ui = ui.copy(
+            lastFixAtMs = fix.timeMs,
+            nearestName = nearest?.first?.name,
+            nearestDistanceM = nearest?.second,
+            trackedName = tracker.current?.name,
+            trackedState = tracker.state,
+        )
+        // 登録地点の1.5km以内では1分ごと、それ以外は5分ごと
+        val wanted = if (tracker.isNear(fix)) nearIntervalMs else sceneIntervalMs
+        if (wanted != intervalMs && ticker != null) requestUpdates(wanted)
+        onUi(ui)
     }
 
     /** 再生開始時の仮の場面（最初の位置が取れるまで）。許可がなければこれが最初の場面 */
@@ -85,11 +130,13 @@ class SceneSource(
     /** 再生・再開 */
     fun start() {
         if (ticker != null) return
-        val intervalMs = (MusicConstants.SCENE_INTERVAL_SEC * 1000).toLong()
+        val intervalMs = sceneIntervalMs
         ticker = scope.launch {
             if (hasPermission) {
+                // 最初の位置を待つあいだに登録地点を読み込んでおく
+                tracker.setPlaces(db.places().observeAll().first().map { it.toRegistered() })
                 requestUpdates(intervalMs)
-                currentFix()?.let { latest = it }
+                currentFix()?.let { onFix(it) }
                 while (isActive) {
                     decide()
                     publish(nextSceneAtMs = System.currentTimeMillis() + intervalMs)
@@ -116,11 +163,14 @@ class SceneSource(
         ticker?.cancel()
         ticker = null
         fused.removeLocationUpdates(callback)
+        this.intervalMs = 0
+        ui = ui.copy(locationIntervalSec = null)
         publish(nextSceneAtMs = null)
     }
 
     fun release() {
         pause()
+        placesJob?.cancel()
         scope.cancel()
     }
 
@@ -139,7 +189,7 @@ class SceneSource(
         }
         val decision = decider.decide(fix, now) { days } ?: return
         onScene(decision.scene)
-        ui = ui.copy(decision = decision, lastFixAtMs = fix?.timeMs ?: ui.lastFixAtMs)
+        ui = ui.copy(decision = decision)
     }
 
     private fun publish(nextSceneAtMs: Long?) {
@@ -149,8 +199,11 @@ class SceneSource(
 
     @SuppressLint("MissingPermission") // hasPermission を確かめてから呼ぶ
     private fun requestUpdates(intervalMs: Long) {
+        this.intervalMs = intervalMs
+        ui = ui.copy(locationIntervalSec = (intervalMs / 1000).toInt())
         val request = LocationRequest.Builder(Priority.PRIORITY_BALANCED_POWER_ACCURACY, intervalMs).build()
         try {
+            // 同じ callback で頼み直すと、間隔だけが置き換わる
             fused.requestLocationUpdates(request, callback, Looper.getMainLooper())
         } catch (e: SecurityException) {
             Log.w(TAG, "位置の許可が取り消された", e)
@@ -178,6 +231,8 @@ class SceneSource(
         private const val TAG = "ekifu"
         /** 再生・再開時に最初の位置を待つ上限 */
         private const val FIRST_FIX_TIMEOUT_MS = 20_000L
+        private val sceneIntervalMs = (MusicConstants.SCENE_INTERVAL_SEC * 1000).toLong()
+        private val nearIntervalMs = (PlaceConstants.NEAR_LOCATION_INTERVAL_SEC * 1000).toLong()
 
         fun hasLocationPermission(context: Context): Boolean =
             listOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION).any {

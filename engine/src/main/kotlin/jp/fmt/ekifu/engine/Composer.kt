@@ -101,6 +101,14 @@ class Composer(seed: Int, private val config: ComposerConfig = ComposerConfig())
     /** 再生開始時にすでに内側の円の中にいる場合、始まりの代わりに滞在から始める */
     fun startInStay(target: Place) {
         check(!started) { "startInStay は再生開始前に呼ぶ" }
+        stay(target)
+    }
+
+    /**
+     * 到着の演出なしで滞在に入る。再生を始めてから最初の位置が取れたとき、
+     * すでに内側の円の中にいた場合に使う（次の和音の切り替えで反映）
+     */
+    fun stay(target: Place) {
         pendingPhase = Phase.STAY
         pendingPlace = target
     }

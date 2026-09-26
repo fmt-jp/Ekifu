@@ -15,6 +15,7 @@ import jp.fmt.ekifu.engine.ComposerConfig
 import jp.fmt.ekifu.engine.MusicEngine
 import jp.fmt.ekifu.engine.Phase
 import jp.fmt.ekifu.engine.StreamStatus
+import jp.fmt.ekifu.engine.applyPlaceEvents
 import jp.fmt.ekifu.location.SceneSource
 import kotlin.random.Random
 
@@ -129,6 +130,7 @@ class EkifuPlayer(context: Context) : SimpleBasePlayer(Looper.getMainLooper()) {
                 val src = SceneSource(
                     appContext,
                     onScene = { scene -> audio.post { it.setScene(scene) } },
+                    onPlaceEvents = { events -> audio.post { applyPlaceEvents(events, it) } },
                     onUi = { PlaybackBus.updateScene(it) },
                 )
                 scenes = src
