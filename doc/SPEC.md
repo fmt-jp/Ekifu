@@ -249,7 +249,7 @@ MVPの完成は、以下をすべて確認できた時点とする。
 
 # 12. 曲調「フュージョン」（追加仕様）
 
-既存の曲調（癒し系インストゥルメンタル）に加えて、T-SQUARE風の明るいフュージョンを選べるようにする。参照実装は `doc/reference/fusion-session.html`（ブラウザで開くと鳴る。Tone.js 製）。数値はこの参照実装から移植し、`MusicConstants.kt`（または新設する `FusionConstants.kt`）に集約する。参照実装にない値は「仕様外・要調整」と書く。
+既存の曲調（癒し系インストゥルメンタル）に加えて、T-SQUARE風の明るいフュージョンを選べるようにする。参照実装は `doc/fusion-session.html`（ブラウザで開くと鳴る。Tone.js 製）。数値はこの参照実装から移植し、`MusicConstants.kt`（または新設する `FusionConstants.kt`）に集約する。参照実装にない値は「仕様外・要調整」と書く。
 
 ## 12.1 概要
 
