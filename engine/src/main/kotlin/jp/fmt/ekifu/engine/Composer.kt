@@ -12,12 +12,19 @@ data class ComposerConfig(
 /** 画面のデバッグ表示用 */
 data class ComposerStatus(
     val phase: Phase,
-    val chord: Chord,
+    /** 癒しの和音（フュージョンでは null） */
+    val chord: Chord?,
+    /** 画面に出す和音の名前 */
+    val chordLabel: String,
     val beatSec: Double,
     val noteProb: Double,
     val masterCutoffHz: Double,
     val scene: Scene,
     val place: Place?,
+    /** フュージョンの熱量（癒しでは null） */
+    val heat: Double? = null,
+    /** フュージョンのいまの和音（癒しでは null） */
+    val fusionChord: FusionChord? = null,
 )
 
 /**
@@ -28,7 +35,7 @@ data class ComposerStatus(
  *
  * 入力による変化は、次の和音の切り替え時に反映する（4章）。
  */
-class Composer(seed: Int, private val config: ComposerConfig = ComposerConfig()) {
+class Composer(seed: Int, private val config: ComposerConfig = ComposerConfig()) : ComposerInput {
 
     private var rng = Mulberry32(seed)
     private val out = ArrayList<MusicEvent>()
@@ -76,24 +83,24 @@ class Composer(seed: Int, private val config: ComposerConfig = ComposerConfig())
     // ---------------- 入力 ----------------
 
     /** 場面を変える（次の和音の切り替えで反映） */
-    fun setScene(newScene: Scene) {
+    override fun setScene(newScene: Scene) {
         pendingScene = newScene
     }
 
     /** 登録地点の外側の円に入った */
-    fun approach(target: Place) {
+    override fun approach(target: Place) {
         pendingPhase = Phase.APPROACH
         pendingPlace = target
     }
 
     /** 登録地点の内側の円に入った */
-    fun arrive(target: Place) {
+    override fun arrive(target: Place) {
         pendingPhase = Phase.ARRIVE
         pendingPlace = target
     }
 
     /** 登録地点の外側の円から出た */
-    fun leave() {
+    override fun leave() {
         pendingPhase = Phase.JOURNEY
         pendingLeave = true
     }
@@ -108,7 +115,7 @@ class Composer(seed: Int, private val config: ComposerConfig = ComposerConfig())
      * 到着の演出なしで滞在に入る。再生を始めてから最初の位置が取れたとき、
      * すでに内側の円の中にいた場合に使う（次の和音の切り替えで反映）
      */
-    fun stay(target: Place) {
+    override fun stay(target: Place) {
         pendingPhase = Phase.STAY
         pendingPlace = target
     }
@@ -166,6 +173,7 @@ class Composer(seed: Int, private val config: ComposerConfig = ComposerConfig())
     fun status() = ComposerStatus(
         phase = phase,
         chord = chord,
+        chordLabel = chord.label,
         beatSec = beatSec.value,
         noteProb = noteProb.value,
         masterCutoffHz = cutoffHz,

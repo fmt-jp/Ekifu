@@ -58,6 +58,7 @@ import kotlinx.coroutines.delay
 fun PlayerScreen(
     onPlay: () -> Unit,
     onPlayDemo: () -> Unit,
+    onPlayFusionDemo: () -> Unit,
     onResume: () -> Unit,
     onPause: () -> Unit,
     onStop: () -> Unit,
@@ -134,7 +135,7 @@ fun PlayerScreen(
 
         if (debugVisible) {
             if (active && stream != null && status != null) DebugCard(ui, stream, status, nowMs)
-            DeveloperCard(ui, status, onPlayDemo)
+            DeveloperCard(ui, status, onPlayDemo, onPlayFusionDemo)
         }
     }
 }
@@ -189,6 +190,18 @@ private fun NowPlayingCard(ui: PlaybackBus.Ui, status: EngineStatus?, nowMs: Lon
                     Spacer(Modifier.width(8.dp))
                     Text("（一時停止中）", style = MaterialTheme.typography.bodySmall)
                 }
+            }
+            if (ui.mode == PlaybackMode.FUSION_DEMO) {
+                Text("フュージョンの音色デモ", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.tertiary)
+                Text(status.composer.chordLabel, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                status.composer.heat?.let {
+                    Text(
+                        "熱量 %.1f・%.0f BPM".format(it, 60.0 / status.composer.beatSec),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                return@Column
             }
             if (ui.mode == PlaybackMode.DEMO) {
                 Text("デモ再生", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.tertiary)
@@ -264,9 +277,10 @@ private fun DebugCard(ui: PlaybackBus.Ui, stream: StreamStatus, status: EngineSt
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text("デバッグ表示", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
             DebugRow("フェーズ", c.phase.label)
-            DebugRow("和音", c.chord.label)
-            DebugRow("1拍", "%.3f 秒".format(c.beatSec))
-            DebugRow("発音確率", "%.2f".format(c.noteProb))
+            DebugRow("和音", c.chordLabel)
+            DebugRow("1拍", "%.3f 秒（%.0f BPM）".format(c.beatSec, 60.0 / c.beatSec))
+            val heat = c.heat
+            if (heat != null) DebugRow("熱量", "%.2f".format(heat)) else DebugRow("発音確率", "%.2f".format(c.noteProb))
             DebugRow("全体ローパス", "%.0f Hz".format(c.masterCutoffHz))
             DebugRow("マス", c.scene.gridId)
             ui.scene?.let { sc ->
@@ -318,7 +332,12 @@ private fun DebugRow(label: String, value: String) {
 
 /** 開発用：デモ再生（5分の場面を30秒に縮めた架空の通勤） */
 @Composable
-private fun DeveloperCard(ui: PlaybackBus.Ui, status: EngineStatus?, onPlayDemo: () -> Unit) {
+private fun DeveloperCard(
+    ui: PlaybackBus.Ui,
+    status: EngineStatus?,
+    onPlayDemo: () -> Unit,
+    onPlayFusionDemo: () -> Unit,
+) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         modifier = Modifier.fillMaxWidth(),
@@ -327,6 +346,9 @@ private fun DeveloperCard(ui: PlaybackBus.Ui, status: EngineStatus?, onPlayDemo:
             Text("開発用", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
             OutlinedButton(onClick = onPlayDemo, enabled = ui.state == PlaybackBus.State.IDLE) {
                 Text("デモ再生（自宅 → 公園 → 駅 → 職場）")
+            }
+            OutlinedButton(onClick = onPlayFusionDemo, enabled = ui.state == PlaybackBus.State.IDLE) {
+                Text("フュージョンの音色デモ")
             }
             if (ui.mode != PlaybackMode.DEMO || ui.state == PlaybackBus.State.IDLE) return@Column
             DemoScript.COMMUTE.cues.forEach { cue ->

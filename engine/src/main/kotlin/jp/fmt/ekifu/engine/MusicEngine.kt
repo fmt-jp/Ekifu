@@ -20,8 +20,8 @@ class MusicEngine private constructor(
     private var composer: Composer,
     private var synth: Synth,
     private val script: DemoScript?,
-    val sampleRate: Int,
-) {
+    override val sampleRate: Int,
+) : SoundEngine {
     constructor(
         seed: Int,
         config: ComposerConfig = ComposerConfig(),
@@ -34,7 +34,7 @@ class MusicEngine private constructor(
     private var currentCue: DemoCue? = null
 
     /** これまでに合成したフレーム数 */
-    val frame: Long get() = synth.frame
+    override val frame: Long get() = synth.frame
 
     val elapsedSec: Double get() = synth.frame.toDouble() / sampleRate
 
@@ -42,7 +42,7 @@ class MusicEngine private constructor(
         get() = composer.endTimeSec?.let { elapsedSec >= it } ?: false
 
     /** 作曲への入力（場面・地点）。次の和音の切り替えで反映される */
-    fun apply(action: (Composer) -> Unit) {
+    override fun apply(action: (ComposerInput) -> Unit) {
         if (!stopping) action(composer)
     }
 
@@ -54,13 +54,13 @@ class MusicEngine private constructor(
         synth.schedule(composer.stop(elapsedSec))
     }
 
-    fun copy(): MusicEngine = MusicEngine(composer.copy(), synth.copy(), script, sampleRate).also {
+    override fun copy(): MusicEngine = MusicEngine(composer.copy(), synth.copy(), script, sampleRate).also {
         it.stopping = stopping
         it.cueIndex = cueIndex
         it.currentCue = currentCue
     }
 
-    fun status() = EngineStatus(
+    override fun status() = EngineStatus(
         elapsedSec = elapsedSec,
         composer = composer.status(),
         demoCue = currentCue,
@@ -73,7 +73,7 @@ class MusicEngine private constructor(
      * frames 個のステレオフレーム（16bit、L/R 交互）を out の offsetFrames 以降に書く。
      * 何回に分けて呼んでも、フレーム位置が同じなら同じ波形になる。
      */
-    fun render(out: ShortArray, frames: Int, offsetFrames: Int = 0) {
+    override fun render(out: ShortArray, frames: Int, offsetFrames: Int) {
         var done = 0
         while (done < frames) {
             // 作曲の先読みの区切りをフレーム位置で固定し、分け方によらず同じ結果にする
@@ -83,6 +83,25 @@ class MusicEngine private constructor(
             synth.render(out, n, offsetFrames + done)
             done += n
         }
+    }
+
+    override fun endingRenderer(status: EngineStatus): Renderer = Synth(sampleRate).also {
+        it.schedule(
+            listOf(ControlEvent(0.0, status.composer.masterCutoffHz, C.DELAY_FEEDBACK, 0.0)) +
+                endingEvents(0.0, status.composer.scene),
+        )
+    }
+
+    override fun fillerRenderer(status: EngineStatus): Renderer = Synth(sampleRate).also {
+        it.schedule(
+            listOf(ControlEvent(0.0, status.composer.masterCutoffHz, C.DELAY_FEEDBACK, 0.0)) +
+                chordEvents(
+                    0.0,
+                    status.composer.chord ?: Chord.I,
+                    status.composer.scene,
+                    padAttackSec = C.FILLER_ATTACK_SEC,
+                ),
+        )
     }
 
     private fun beginBlock() {

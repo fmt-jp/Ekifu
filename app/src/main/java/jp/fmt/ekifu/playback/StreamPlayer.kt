@@ -8,9 +8,9 @@ import android.os.PowerManager
 import android.os.Process
 import android.util.Log
 import jp.fmt.ekifu.engine.ChunkStream
-import jp.fmt.ekifu.engine.Composer
+import jp.fmt.ekifu.engine.ComposerInput
 import jp.fmt.ekifu.engine.MusicConstants
-import jp.fmt.ekifu.engine.MusicEngine
+import jp.fmt.ekifu.engine.SoundEngine
 import jp.fmt.ekifu.engine.StreamStatus
 
 /**
@@ -48,7 +48,7 @@ class StreamPlayer(context: Context, private val listener: Listener) {
     fun status(): StreamStatus? = stream?.status()
 
     /** 合成を始める（音はまだ出さない） */
-    fun prepare(engine: () -> MusicEngine) {
+    fun prepare(engine: () -> SoundEngine) {
         if (stream != null) return
         val s = ChunkStream(engine())
         stream = s
@@ -59,7 +59,7 @@ class StreamPlayer(context: Context, private val listener: Listener) {
     }
 
     /** 作曲への入力（場面など）。次に合成するチャンクから反映される */
-    fun post(action: (Composer) -> Unit) {
+    fun post(action: (ComposerInput) -> Unit) {
         stream?.post(action)
     }
 

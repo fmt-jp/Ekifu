@@ -7,7 +7,7 @@
 
 | ディレクトリ | 内容 |
 | --- | --- |
-| `engine/` | 音楽エンジン（Android 非依存の Kotlin）。作曲 `Composer`、合成 `Synth`、チャンク生成とバッファ `ChunkStream`、デモ台本 `DemoScript`、パラメータ `MusicConstants.kt` |
+| `engine/` | 音楽エンジン（Android 非依存の Kotlin）。曲調「癒し」は作曲 `Composer`・合成 `Synth`（`MusicEngine`）、曲調「フュージョン」は `FusionEngine`（段階6a では音色デモ）。チャンク生成とバッファ `ChunkStream`、デモ台本 `DemoScript`、パラメータ `MusicConstants.kt`・`FusionConstants.kt` |
 | `app/` | Android アプリ（Jetpack Compose）。再生はフォアグラウンドサービス `PlaybackService`（Media3 MediaSession）で行う |
 | `.github/workflows/android-debug-apk.yml` | 単体テストとデバッグ用 APK のビルド |
 
@@ -158,3 +158,19 @@ adb exec-out run-as jp.fmt.ekifu cat databases/ekifu.db-wal > ekifu.db-wal   # �
 sqlite3 ekifu.db "SELECT * FROM visits;"   # gridId と day だけ
 sqlite3 ekifu.db "SELECT name, mood FROM places;"
 ```
+
+### 段階6a：フュージョンの音色（SPEC 12章）
+
+APK は新しい番号の `ekifu-debug-apk-<番号>` を上書きインストールする。
+
+1. 設定 →「デバッグ表示」をオンにする
+2. 再生画面の下「開発用」→「フュージョンの音色デモ」を押す（132 BPM、A→A→B→B のくり返し。1ブロック＝8小節＝約14.5秒）
+3. 画面に和音（例「A・GM7」）と熱量が出る。熱量はブロックごとに 0.3 → 0.6 → 0.9 と変わる
+4. 聴いて確かめる（イヤホン推奨）
+   - 途切れず鳴り、プチッ・バリッという音がない
+   - リード（EWI風）：しゃくり上げて伸ばす音、16分・32分の速弾き、半音上下から回り込む音、140msで滑り上がるハイトーンと最後のフォール、伸ばす音のビブラート
+   - シンセブラス（やや左）、ベース、ドラム（キック・スネア・ハイハット・タム・クラッシュ）
+   - 熱量 0.3 はハイハットが8分でキック少なめ、0.9 は16分・キックが多く、スネアのゴーストノートとフィルが増える
+   - 3・4ブロック目（B）は全音上に転調し、2ブロックに1回、最後の小節がキメ（全員で同じリズム）
+5. 「停止」で DM9 の和音を鳴らして約12秒でフェードアウトする
+6. 画面を消しても途切れない。デバッグ表示の「バッファ不足」が 0 回

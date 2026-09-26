@@ -30,14 +30,14 @@ data class StreamStatus(
  * - 合成が追いつかないときは無音を挟まず、直前の和音のパッドを伸ばしてつなぐ
  * - [stop] では作り置きの音を消しながら I を鳴らし、約12秒でフェードアウトする
  */
-class ChunkStream(engine: MusicEngine) {
+class ChunkStream(engine: SoundEngine) {
 
     private class Chunk(
         val start: Long,
         val frames: Int,
         val pcm: ShortArray,
         /** このチャンクの頭でのエンジンの状態（作り直し用） */
-        val snapshot: MusicEngine,
+        val snapshot: SoundEngine,
         /** STATUS_INTERVAL ごとの状態 */
         val statuses: List<EngineStatus>,
     ) {
@@ -64,14 +64,14 @@ class ChunkStream(engine: MusicEngine) {
     private var readFrame = engine.frame
     private var shortNext = true
     private var filling = true
-    private val inputs = ArrayList<(Composer) -> Unit>()
+    private val inputs = ArrayList<(ComposerInput) -> Unit>()
     private var lastStatus: EngineStatus? = null
     private var started = false
     private var underruns = 0
     private var inUnderrun = false
-    private var filler: Synth? = null
+    private var filler: Renderer? = null
     private var crossfadeLeft = 0
-    private var ending: Synth? = null
+    private var ending: Renderer? = null
     private var endingDone = 0
     private var finished = false
     private var mixBuf = ShortArray(0)
@@ -83,7 +83,7 @@ class ChunkStream(engine: MusicEngine) {
      * 合成スレッドからだけ呼ぶ。
      */
     fun work(): Boolean {
-        val engine: MusicEngine
+        val engine: SoundEngine
         val frames: Int
         val start: Long
         synchronized(lock) {
@@ -156,7 +156,7 @@ class ChunkStream(engine: MusicEngine) {
     // ---------------- 他のスレッドから ----------------
 
     /** 作曲への入力（場面・地点）。次に合成するチャンクから反映する */
-    fun post(action: (Composer) -> Unit) {
+    fun post(action: (ComposerInput) -> Unit) {
         synchronized(lock) {
             if (ending != null || finished) return
             inputs += action
@@ -169,12 +169,7 @@ class ChunkStream(engine: MusicEngine) {
         synchronized(lock) {
             if (ending != null || finished) return
             val st = statusAtLocked(readFrame) ?: live.status()
-            ending = Synth(sampleRate).also {
-                it.schedule(
-                    listOf(ControlEvent(0.0, st.composer.masterCutoffHz, C.DELAY_FEEDBACK, 0.0)) +
-                        endingEvents(0.0, st.composer.scene),
-                )
-            }
+            ending = live.endingRenderer(st)
             endingDone = 0
             inputs.clear()
             lock.notifyAll()
@@ -257,7 +252,7 @@ class ChunkStream(engine: MusicEngine) {
         val f = filler
         if (crossfadeLeft > 0 && f != null) {
             val tmp = mixBuffer(frames)
-            f.render(tmp, frames)
+            f.render(tmp, frames, 0)
             for (i in 0 until frames) {
                 if (crossfadeLeft <= 0) break
                 val g = crossfadeLeft.toDouble() / crossfadeFrames
@@ -272,20 +267,15 @@ class ChunkStream(engine: MusicEngine) {
         return frames
     }
 
-    private fun makeFillerLocked(): Synth {
+    private fun makeFillerLocked(): Renderer {
         val st = lastStatus ?: statusAtLocked(readFrame) ?: live.status()
-        return Synth(sampleRate).also {
-            it.schedule(
-                listOf(ControlEvent(0.0, st.composer.masterCutoffHz, C.DELAY_FEEDBACK, 0.0)) +
-                    chordEvents(0.0, st.composer.chord, st.composer.scene, padAttackSec = C.FILLER_ATTACK_SEC),
-            )
-        }
+        return live.fillerRenderer(st)
     }
 
     /** 作り置きの音を消しながら、終わりの I を重ねる */
-    private fun mixEndingLocked(end: Synth, out: ShortArray, frames: Int) {
+    private fun mixEndingLocked(end: Renderer, out: ShortArray, frames: Int) {
         val tmp = mixBuffer(frames)
-        end.render(tmp, frames)
+        end.render(tmp, frames, 0)
         for (i in 0 until frames) {
             val gOld = (1.0 - (endingDone + i).toDouble() / endingBufferFadeFrames).coerceIn(0.0, 1.0)
             for (ch in 0..1) {

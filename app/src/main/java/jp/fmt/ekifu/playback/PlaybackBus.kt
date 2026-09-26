@@ -7,7 +7,12 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 
 /** 再生の種類 */
-enum class PlaybackMode { OMAKASE, DEMO }
+enum class PlaybackMode {
+    OMAKASE,
+    DEMO,
+    /** 段階6a：フュージョンの音色デモ（開発用）。段階6cで「曲調」の設定に置き換える */
+    FUSION_DEMO,
+}
 
 /** 再生サービスと画面のあいだで状態を渡す（同じプロセス内） */
 object PlaybackBus {

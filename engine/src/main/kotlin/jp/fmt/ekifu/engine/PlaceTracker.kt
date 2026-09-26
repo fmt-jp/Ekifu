@@ -153,7 +153,7 @@ class PlaceTracker(places: List<RegisteredPlace> = emptyList()) {
  * 判定の結果を作曲に送る。同じ位置で「離れる」と別の地点への接近・到着が重なったときは、
  * 離れるテーマは鳴らさずに新しい地点の演出だけにする。
  */
-fun applyPlaceEvents(events: List<PlaceEvent>, composer: Composer) {
+fun applyPlaceEvents(events: List<PlaceEvent>, composer: ComposerInput) {
     val entering = events.any { it !is PlaceEvent.Leave }
     for (e in events) {
         when (e) {

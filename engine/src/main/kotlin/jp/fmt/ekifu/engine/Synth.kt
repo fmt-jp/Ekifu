@@ -20,7 +20,7 @@ import jp.fmt.ekifu.engine.MusicConstants as C
  * 鳴っている音、ディレイ・リバーブ、フィルターの状態はこのインスタンスが持ち続けるので、
  * render を何回に分けて呼んでも波形はつながる。
  */
-class Synth(private val sampleRate: Int = C.SAMPLE_RATE) {
+class Synth(private val sampleRate: Int = C.SAMPLE_RATE) : Renderer {
 
     private class Scheduled(val frame: Long, val order: Long, val event: MusicEvent)
 
@@ -85,7 +85,13 @@ class Synth(private val sampleRate: Int = C.SAMPLE_RATE) {
     }
 
     /** frames 個のステレオフレームを out の offsetFrames 以降（L, R 交互）に書く */
-    fun render(out: ShortArray, frames: Int, offsetFrames: Int = 0) {
+    override fun render(out: ShortArray, frames: Int, offsetFrames: Int) {
+        renderInto(out, frames, offsetFrames)
+    }
+
+    fun render(out: ShortArray, frames: Int) = renderInto(out, frames, 0)
+
+    private fun renderInto(out: ShortArray, frames: Int, offsetFrames: Int) {
         for (i in 0 until frames) {
             while (true) {
                 val head = queue.peek() ?: break

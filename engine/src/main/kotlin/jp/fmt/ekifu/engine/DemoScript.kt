@@ -10,7 +10,7 @@ class DemoCue(
     val atSec: Double,
     val title: String,
     val hint: String,
-    val action: (Composer) -> Unit,
+    val action: (ComposerInput) -> Unit,
 )
 
 class DemoScript(val cues: List<DemoCue>) {

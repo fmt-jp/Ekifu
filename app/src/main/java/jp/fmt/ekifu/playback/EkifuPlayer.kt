@@ -12,6 +12,7 @@ import androidx.media3.common.util.UnstableApi
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import jp.fmt.ekifu.engine.ComposerConfig
+import jp.fmt.ekifu.engine.FusionEngine
 import jp.fmt.ekifu.engine.MusicEngine
 import jp.fmt.ekifu.engine.Phase
 import jp.fmt.ekifu.engine.StreamStatus
@@ -150,6 +151,7 @@ class EkifuPlayer(context: Context) : SimpleBasePlayer(Looper.getMainLooper()) {
         postedSubtitle = subtitle
         when (mode) {
             PlaybackMode.DEMO -> audio.prepare { MusicEngine.demo() }
+            PlaybackMode.FUSION_DEMO -> audio.prepare { FusionEngine.demo() }
             PlaybackMode.OMAKASE -> {
                 val src = SceneSource(
                     appContext,
@@ -251,6 +253,7 @@ class EkifuPlayer(context: Context) : SimpleBasePlayer(Looper.getMainLooper()) {
     private fun defaultSubtitle() = when (mode) {
         PlaybackMode.OMAKASE -> SUBTITLE_OMAKASE
         PlaybackMode.DEMO -> SUBTITLE_DEMO
+        PlaybackMode.FUSION_DEMO -> SUBTITLE_FUSION_DEMO
     }
 
     private companion object {
@@ -258,6 +261,7 @@ class EkifuPlayer(context: Context) : SimpleBasePlayer(Looper.getMainLooper()) {
         const val MEDIA_ID = "ekifu"
         const val SUBTITLE_OMAKASE = "おまかせ再生中"
         const val SUBTITLE_DEMO = "デモ再生中"
+        const val SUBTITLE_FUSION_DEMO = "フュージョンの音色デモ"
         const val SUBTITLE_ENDING = "終わり（フェードアウト中）"
     }
 }

@@ -5,8 +5,15 @@ import kotlin.math.cos
 import kotlin.math.exp
 import kotlin.math.sin
 
-/** RBJ の2次ローパス（1チャンネル） */
-class Biquad(private val sampleRate: Int, cutoffHz: Double, private val q: Double = 0.7071) {
+enum class FilterType { LOWPASS, HIGHPASS, BANDPASS }
+
+/** RBJ の2次フィルター（1チャンネル）。既定はローパス */
+class Biquad(
+    private val sampleRate: Int,
+    cutoffHz: Double,
+    private val q: Double = 0.7071,
+    private val type: FilterType = FilterType.LOWPASS,
+) {
     private var b0 = 0.0
     private var b1 = 0.0
     private var b2 = 0.0
@@ -27,15 +34,29 @@ class Biquad(private val sampleRate: Int, cutoffHz: Double, private val q: Doubl
         val alpha = sin(w0) / (2 * q)
         val cosw = cos(w0)
         val a0 = 1 + alpha
-        b0 = (1 - cosw) / 2 / a0
-        b1 = (1 - cosw) / a0
-        b2 = b0
+        when (type) {
+            FilterType.LOWPASS -> {
+                b0 = (1 - cosw) / 2 / a0
+                b1 = (1 - cosw) / a0
+                b2 = b0
+            }
+            FilterType.HIGHPASS -> {
+                b0 = (1 + cosw) / 2 / a0
+                b1 = -(1 + cosw) / a0
+                b2 = b0
+            }
+            FilterType.BANDPASS -> {
+                b0 = alpha / a0
+                b1 = 0.0
+                b2 = -alpha / a0
+            }
+        }
         a1 = -2 * cosw / a0
         a2 = (1 - alpha) / a0
     }
 
     /** 係数と内部状態をまるごと複製する */
-    fun copy(): Biquad = Biquad(sampleRate, 1000.0, q).also {
+    fun copy(): Biquad = Biquad(sampleRate, 1000.0, q, type).also {
         it.b0 = b0; it.b1 = b1; it.b2 = b2; it.a1 = a1; it.a2 = a2
         it.x1 = x1; it.x2 = x2; it.y1 = y1; it.y2 = y2
     }
