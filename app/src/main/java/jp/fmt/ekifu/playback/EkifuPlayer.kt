@@ -11,13 +11,21 @@ import androidx.media3.common.SimpleBasePlayer
 import androidx.media3.common.util.UnstableApi
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
-import jp.fmt.ekifu.engine.ComposerConfig
-import jp.fmt.ekifu.engine.FusionEngine
-import jp.fmt.ekifu.engine.MusicEngine
+import jp.fmt.ekifu.engine.CarryOver
+import jp.fmt.ekifu.engine.MusicStyle
 import jp.fmt.ekifu.engine.Phase
+import jp.fmt.ekifu.engine.SoundEngine
 import jp.fmt.ekifu.engine.StreamStatus
 import jp.fmt.ekifu.engine.applyPlaceEvents
+import jp.fmt.ekifu.engine.StyleEngines
 import jp.fmt.ekifu.location.SceneSource
+import jp.fmt.ekifu.settings.AppSettings
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.launch
 import kotlin.random.Random
 
 /**
@@ -49,11 +57,23 @@ class EkifuPlayer(context: Context) : SimpleBasePlayer(Looper.getMainLooper()) {
     private var playbackState = Player.STATE_IDLE
     private var ending = false
     @Volatile private var mode = PlaybackMode.OMAKASE
+    /** 鳴らしている曲調（停止中は次の再生で使う曲調） */
+    @Volatile private var style = MusicStyle.HEALING
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var scenes: SceneSource? = null
     private var subtitle = defaultSubtitle()
     @Volatile private var postedSubtitle = subtitle
     private var positionMs = 0L
     private val interruptions = Interruptions(context) { onInterrupted() }
+
+    init {
+        // メディアボタンから画面を開かずに始まることもあるので、ここでも読み込む
+        AppSettings.load(appContext)
+        style = AppSettings.style.value
+        subtitle = defaultSubtitle()
+        postedSubtitle = subtitle
+        scope.launch { AppSettings.style.drop(1).collect { onStyleChanged(it) } }
+    }
 
     /** 位置を使って再生中か（フォアグラウンドサービスに location 種別を付けるかどうか） */
     val usesLocation: Boolean
@@ -147,11 +167,11 @@ class EkifuPlayer(context: Context) : SimpleBasePlayer(Looper.getMainLooper()) {
     private fun ensurePrepared() {
         if (audio.isPrepared) return
         mode = PlaybackBus.requestedMode
+        style = AppSettings.style.value
         subtitle = defaultSubtitle()
         postedSubtitle = subtitle
         when (mode) {
-            PlaybackMode.DEMO -> audio.prepare { MusicEngine.demo() }
-            PlaybackMode.FUSION_DEMO -> audio.prepare { FusionEngine.demo() }
+            PlaybackMode.DEMO -> audio.prepare { StyleEngines.demo(style) }
             PlaybackMode.OMAKASE -> {
                 val src = SceneSource(
                     appContext,
@@ -162,14 +182,46 @@ class EkifuPlayer(context: Context) : SimpleBasePlayer(Looper.getMainLooper()) {
                 scenes = src
                 audio.prepare {
                     // 位置を待つあいだは仮の場面で始め、最初の位置が取れたらその場所のモチーフをベルで鳴らす
-                    MusicEngine(
+                    StyleEngines.create(
+                        style,
                         seed = Random.nextInt(),
-                        config = ComposerConfig(playMotifAtStart = !src.hasPermission),
-                    ).also { engine -> engine.apply { it.setScene(src.initialScene()) } }
+                        demo = false,
+                        carry = CarryOver(src.initialScene()),
+                        playMotifAtStart = !src.hasPermission,
+                    )
                 }
             }
         }
     }
+
+    /**
+     * 曲調の切り替え（12.12）。再生中・一時停止中なら約2秒でフェードアウトして、新しい曲調の「始まり」から作り直す。
+     * 場面と登録地点の判定は引き継ぐ（内側の円にいれば到着の演出なしで滞在、接近中なら始まりのあと接近）。
+     * デモは台本の続きから。停止中は次の再生から。終わりのフェードアウト中は無視する
+     */
+    private fun onStyleChanged(newStyle: MusicStyle) {
+        if (!audio.isPrepared || ending) return
+        if (newStyle == style) return
+        val src = scenes
+        val demo = mode == PlaybackMode.DEMO
+        val switched = audio.switchEngine { timelineSec ->
+            createSwitched(newStyle, demo, timelineSec, if (demo) null else src?.carryOver())
+        }
+        if (!switched) return
+        style = newStyle
+        subtitle = defaultSubtitle()
+        postedSubtitle = subtitle
+        publish()
+        invalidateState()
+    }
+
+    private fun createSwitched(newStyle: MusicStyle, demo: Boolean, timelineSec: Double, carry: CarryOver?): SoundEngine =
+        if (demo) {
+            StyleEngines.demo(newStyle, timelineSec)
+        } else {
+            // 場面は引き継ぐので、最初のモチーフはいまの場所のもの
+            StyleEngines.create(newStyle, Random.nextInt(), demo = false, carry = carry)
+        }
 
     override fun handleStop(): ListenableFuture<*> {
         when {
@@ -194,6 +246,7 @@ class EkifuPlayer(context: Context) : SimpleBasePlayer(Looper.getMainLooper()) {
     }
 
     override fun handleRelease(): ListenableFuture<*> {
+        scope.cancel()
         releaseScenes()
         audio.release()
         interruptions.release()
@@ -250,10 +303,13 @@ class EkifuPlayer(context: Context) : SimpleBasePlayer(Looper.getMainLooper()) {
         }
     }
 
-    private fun defaultSubtitle() = when (mode) {
-        PlaybackMode.OMAKASE -> SUBTITLE_OMAKASE
-        PlaybackMode.DEMO -> SUBTITLE_DEMO
-        PlaybackMode.FUSION_DEMO -> SUBTITLE_FUSION_DEMO
+    /** 「おまかせ再生中・癒し」「デモ再生中・フュージョン」など、曲調を添える */
+    private fun defaultSubtitle(): String {
+        val m = when (mode) {
+            PlaybackMode.OMAKASE -> SUBTITLE_OMAKASE
+            PlaybackMode.DEMO -> SUBTITLE_DEMO
+        }
+        return "$m・${style.label}"
     }
 
     private companion object {
@@ -261,7 +317,6 @@ class EkifuPlayer(context: Context) : SimpleBasePlayer(Looper.getMainLooper()) {
         const val MEDIA_ID = "ekifu"
         const val SUBTITLE_OMAKASE = "おまかせ再生中"
         const val SUBTITLE_DEMO = "デモ再生中"
-        const val SUBTITLE_FUSION_DEMO = "デモ再生中・フュージョン"
         const val SUBTITLE_ENDING = "終わり（フェードアウト中）"
     }
 }

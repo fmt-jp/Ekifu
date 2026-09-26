@@ -72,6 +72,7 @@ class Composer(seed: Int, private val config: ComposerConfig = ComposerConfig())
     private var pendingPhase: Phase? = null
     private var pendingPlace: Place? = null
     private var pendingLeave = false
+    private var deferredApproach: Place? = null
 
     private var beatSec = Ramp(C.BASE_BEAT_SEC)
     private var noteProb = Ramp(C.PROB_START)
@@ -92,19 +93,26 @@ class Composer(seed: Int, private val config: ComposerConfig = ComposerConfig())
     /** 登録地点の外側の円に入った */
     override fun approach(target: Place) {
         pendingPhase = Phase.APPROACH
+        deferredApproach = null
         pendingPlace = target
     }
 
     /** 登録地点の内側の円に入った */
     override fun arrive(target: Place) {
         pendingPhase = Phase.ARRIVE
+        deferredApproach = null
         pendingPlace = target
     }
 
     /** 登録地点の外側の円から出た */
     override fun leave() {
         pendingPhase = Phase.JOURNEY
+        deferredApproach = null
         pendingLeave = true
+    }
+
+    override fun approachAfterStart(target: Place) {
+        deferredApproach = target
     }
 
     /** 再生開始時にすでに内側の円の中にいる場合、始まりの代わりに滞在から始める */
@@ -119,6 +127,7 @@ class Composer(seed: Int, private val config: ComposerConfig = ComposerConfig())
      */
     override fun stay(target: Place) {
         pendingPhase = Phase.STAY
+        deferredApproach = null
         pendingPlace = target
     }
 
@@ -156,6 +165,7 @@ class Composer(seed: Int, private val config: ComposerConfig = ComposerConfig())
         it.pendingPhase = pendingPhase
         it.pendingPlace = pendingPlace
         it.pendingLeave = pendingLeave
+        it.deferredApproach = deferredApproach
         it.beatSec = beatSec.copy()
         it.noteProb = noteProb.copy()
         it.moodActive = moodActive
@@ -277,7 +287,16 @@ class Composer(seed: Int, private val config: ComposerConfig = ComposerConfig())
         val elapsed = timeSec - phaseStartSec
         val progressionDone = progIndex + 1 >= progression.size
         return when (phase) {
-            Phase.START -> if (elapsed >= config.startPhaseSec) Phase.JOURNEY else Phase.START
+            Phase.START -> when {
+                elapsed < config.startPhaseSec -> Phase.START
+                deferredApproach != null -> {
+                    place = deferredApproach
+                    placeTheme = Motifs.theme(deferredApproach!!.themeSeed)
+                    deferredApproach = null
+                    Phase.APPROACH
+                }
+                else -> Phase.JOURNEY
+            }
             Phase.JOURNEY -> if (elapsed >= config.interludeEverySec) Phase.INTERLUDE else Phase.JOURNEY
             Phase.INTERLUDE -> if (progressionDone) Phase.JOURNEY else Phase.INTERLUDE
             Phase.ARRIVE -> if (progressionDone) Phase.STAY else Phase.ARRIVE

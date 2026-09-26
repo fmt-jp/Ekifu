@@ -15,6 +15,29 @@ class DemoCue(
 
 class DemoScript(val cues: List<DemoCue>) {
 
+    /** atSec より後の最初の区間の番号 */
+    fun firstCueAfter(atSec: Double): Int = cues.indexOfFirst { it.atSec > atSec }.let { if (it < 0) cues.size else it }
+
+    /** atSec に流れている区間（まだ始まっていなければ null） */
+    fun cueAt(atSec: Double): DemoCue? = if (atSec <= 0.0) null else cues.lastOrNull { it.atSec <= atSec }
+
+    /** atSec までの台本を流したときの場面と地点の状態（曲調を切り替えて続きから鳴らすため） */
+    fun carryOverAt(atSec: Double): CarryOver {
+        val recorder = object : ComposerInput {
+            var lastScene: Scene? = null
+            var inside: Place? = null
+            var approaching: Place? = null
+            override fun setScene(newScene: Scene) { lastScene = newScene }
+            override fun approach(target: Place) { approaching = target; inside = null }
+            override fun arrive(target: Place) { inside = target; approaching = null }
+            override fun leave() { inside = null; approaching = null }
+            override fun stay(target: Place) { inside = target; approaching = null }
+            override fun approachAfterStart(target: Place) = approach(target)
+        }
+        cues.filter { it.atSec <= atSec }.forEach { it.action(recorder) }
+        return CarryOver(recorder.lastScene, recorder.inside, recorder.approaching)
+    }
+
     companion object {
         val PARK = Place("demo-park", "いつもの公園", Mood.CALM, themeSeed = 12345)
         val STATION = Place("demo-station", "駅", Mood.NOSTALGIC, themeSeed = 23456)

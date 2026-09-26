@@ -15,6 +15,7 @@ import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
 import jp.fmt.ekifu.data.EkifuDatabase
 import jp.fmt.ekifu.data.Visit
+import jp.fmt.ekifu.engine.CarryOver
 import jp.fmt.ekifu.engine.Geo
 import jp.fmt.ekifu.engine.LocationFix
 import jp.fmt.ekifu.engine.MusicConstants
@@ -126,6 +127,9 @@ class SceneSource(
         val now = System.currentTimeMillis()
         return SceneDecider.withoutLocation(sessionId, pseudoIndex, now, TimeZone.getDefault().getOffset(now))
     }
+
+    /** いまの場面（まだ決まっていなければ仮の場面）と登録地点の状態。曲調を切り替えるときに引き継ぐ */
+    fun carryOver(): CarryOver = tracker.carryOver(ui.decision?.scene ?: initialScene())
 
     /** 再生・再開 */
     fun start() {

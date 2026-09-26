@@ -9,9 +9,8 @@ import kotlinx.coroutines.flow.update
 /** 再生の種類 */
 enum class PlaybackMode {
     OMAKASE,
+    /** デモ再生（開発用）。曲調の設定に従う */
     DEMO,
-    /** フュージョンのデモ再生（開発用。台本は癒しと同じ）。段階6cで「曲調」の設定に置き換える */
-    FUSION_DEMO,
 }
 
 /** 再生サービスと画面のあいだで状態を渡す（同じプロセス内） */

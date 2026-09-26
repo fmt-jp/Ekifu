@@ -29,6 +29,7 @@ data class StreamStatus(
  *   その頭の状態から作り直す（反映の遅れは最大で約11秒）
  * - 合成が追いつかないときは無音を挟まず、直前の和音のパッドを伸ばしてつなぐ
  * - [stop] では作り置きの音を消しながら I を鳴らし、約12秒でフェードアウトする
+ * - [switchEngine]（曲調の切り替え）では約2秒でフェードアウトし、その先を新しいエンジンで作り直す
  */
 class ChunkStream(engine: SoundEngine) {
 
@@ -40,6 +41,10 @@ class ChunkStream(engine: SoundEngine) {
         val snapshot: SoundEngine,
         /** STATUS_INTERVAL ごとの状態 */
         val statuses: List<EngineStatus>,
+        /** このチャンクを作ったエンジンの 0 フレーム目が、ストリームのどこか */
+        val engineOffset: Long,
+        /** どの曲調（切り替えの世代）のエンジンで作ったか */
+        val gen: Int,
     ) {
         val end get() = start + frames
     }
@@ -75,6 +80,11 @@ class ChunkStream(engine: SoundEngine) {
     private var endingDone = 0
     private var finished = false
     private var mixBuf = ShortArray(0)
+    /** いまのエンジンの 0 フレーム目がストリームのどこか・そこでの台本の時刻（曲調の切り替え用） */
+    private var engineOffset = 0L
+    private var timelineOffsetSec = 0.0
+    /** 曲調を切り替えるたびに増やす。切り替え前のエンジンで作ったチャンクを捨てるため */
+    private var generation = 0
 
     // ---------------- 合成スレッド ----------------
 
@@ -86,6 +96,8 @@ class ChunkStream(engine: SoundEngine) {
         val engine: SoundEngine
         val frames: Int
         val start: Long
+        val gen: Int
+        val offset: Long
         synchronized(lock) {
             val applied = applyInputsLocked()
             if (!canSynthesizeLocked()) return applied
@@ -93,6 +105,8 @@ class ChunkStream(engine: SoundEngine) {
             shortNext = false
             engine = live
             start = writeFrame
+            gen = generation
+            offset = engineOffset
         }
 
         // 重い処理は lock の外で。live とチャンク列を書き換えるのはこのスレッドだけ
@@ -108,7 +122,9 @@ class ChunkStream(engine: SoundEngine) {
         }
 
         synchronized(lock) {
-            chunks.addLast(Chunk(start, frames, pcm, snapshot, statuses))
+            // 合成しているあいだに曲調が切り替わっていたら捨てる
+            if (gen != generation) return true
+            chunks.addLast(Chunk(start, frames, pcm, snapshot, statuses, offset, gen))
             writeFrame = start + frames
             lock.notifyAll()
         }
@@ -139,7 +155,8 @@ class ChunkStream(engine: SoundEngine) {
     /** 入力をエンジンに反映する。先回りしたチャンクがあれば捨てて、その頭の状態から作り直す */
     private fun applyInputsLocked(): Boolean {
         if (inputs.isEmpty()) return false
-        val cut = chunks.indexOfFirst { it.start >= readFrame + marginFrames }
+        // 切り替え前の曲調のチャンクには戻らない
+        val cut = chunks.indexOfFirst { it.start >= readFrame + marginFrames && it.gen == generation }
         if (cut >= 0) {
             val c = chunks[cut]
             live = c.snapshot
@@ -164,12 +181,64 @@ class ChunkStream(engine: SoundEngine) {
         }
     }
 
+    /**
+     * 曲調の切り替え（12.12）：再生位置から約2秒でフェードアウトし、その先の作り置きを捨てて、
+     * create で作る新しいエンジンで作り直す。create には切り替える位置での台本の時刻を渡す。
+     * 終わりのフェードアウト中は無視して false を返す。
+     */
+    fun switchEngine(create: (timelineSec: Double) -> SoundEngine): Boolean {
+        synchronized(lock) {
+            if (ending != null || finished) return false
+            val fadeFrames = sec(C.STYLE_SWITCH_FADE_SEC)
+            val cut = minOf(readFrame + fadeFrames, writeFrame)
+            // 再生位置から cut までの作り置きをフェードアウトさせる
+            for (c in chunks) {
+                val from = maxOf(c.start, readFrame)
+                val to = minOf(c.end, cut)
+                for (f in from until to) {
+                    val g = (1.0 - (f - readFrame).toDouble() / fadeFrames).coerceIn(0.0, 1.0)
+                    val i = ((f - c.start) * 2).toInt()
+                    c.pcm[i] = (c.pcm[i] * g).toInt().toShort()
+                    c.pcm[i + 1] = (c.pcm[i + 1] * g).toInt().toShort()
+                }
+            }
+            // cut より先を捨てる
+            while (chunks.isNotEmpty() && chunks.last().start >= cut) chunks.removeLast()
+            chunks.lastOrNull()?.let { c ->
+                if (c.end > cut) {
+                    val n = (cut - c.start).toInt()
+                    chunks.removeLast()
+                    chunks.addLast(Chunk(c.start, n, c.pcm.copyOf(n * 2), c.snapshot, c.statuses, c.engineOffset, c.gen))
+                }
+            }
+            val timeline = timelineOffsetSec + (cut - engineOffset).toDouble() / sampleRate
+            // まだ反映していない入力は、引き継ぐ状態（create に渡すもの）に含まれている
+            inputs.clear()
+            live = create(timeline)
+            engineOffset = cut
+            timelineOffsetSec = timeline
+            writeFrame = cut
+            shortNext = true
+            filling = true
+            generation++
+            lock.notifyAll()
+            return true
+        }
+    }
+
     /** 停止ボタン：今の再生位置から I を鳴らして約12秒でフェードアウトする */
     fun stop() {
         synchronized(lock) {
             if (ending != null || finished) return
-            val st = statusAtLocked(readFrame) ?: live.status()
-            ending = live.endingRenderer(st, readFrame.toDouble() / sampleRate)
+            // 切り替えのフェードアウト中なら、新しい曲調の状態で終わる
+            val here = chunks.firstOrNull { readFrame >= it.start && readFrame < it.end }
+            ending = if (here == null || here.gen == generation) {
+                val st = statusAtLocked(readFrame) ?: live.status()
+                live.endingRenderer(st, (readFrame - engineOffset).toDouble() / sampleRate)
+            } else {
+                val st = live.status()
+                live.endingRenderer(st, st.elapsedSec)
+            }
             endingBufferFadeFrames = sec(live.endingCrossfadeSec).coerceAtLeast(1)
             endingDone = 0
             inputs.clear()

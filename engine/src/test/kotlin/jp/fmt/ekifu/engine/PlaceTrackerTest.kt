@@ -86,6 +86,23 @@ class PlaceTrackerTest {
     }
 
     @Test
+    fun carryOverForStyleSwitch() {
+        val t = PlaceTracker(listOf(park))
+        t.update(at(2000.0, 0.0))
+        assertEquals(CarryOver(DAY_WALK), t.carryOver(DAY_WALK))
+        t.update(at(480.0, 1.0))
+        assertEquals(CarryOver(DAY_WALK, approaching = park.place), t.carryOver(DAY_WALK))
+        t.update(at(60.0, 2.0))
+        assertEquals(CarryOver(DAY_WALK, stayAt = park.place), t.carryOver(DAY_WALK))
+        t.update(at(700.0, 3.0))
+        assertEquals(CarryOver(null), t.carryOver(null))
+        // 音を変えずに追いかけている再接近は、接近を引き継がない
+        t.update(at(450.0, 5.0))
+        assertEquals(PlaceTracker.State.APPROACHING, t.state)
+        assertEquals(CarryOver(DAY_WALK), t.carryOver(DAY_WALK))
+    }
+
+    @Test
     fun innerCircleWinsThenNearestPlace() {
         val cafe = RegisteredPlace("cafe", "喫茶店", lat0 + 400 / 111_195.0, lng0, 800, 80, Mood.NOSTALGIC, 1)
         val station = RegisteredPlace("station", "駅", lat0 + 700 / 111_195.0, lng0, 1000, 100, Mood.BRIGHT, 2)

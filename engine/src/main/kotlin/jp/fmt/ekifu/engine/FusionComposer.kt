@@ -60,6 +60,7 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
     private var pendingPhase: Phase? = null
     private var pendingPlace: Place? = null
     private var pendingLeave = false
+    private var deferredApproach: Place? = null
 
     /** リード：直前の音と、使い回し中のモチーフ */
     private var cur = F.LEAD_START_MIDI
@@ -75,22 +76,30 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
 
     override fun approach(target: Place) {
         pendingPhase = Phase.APPROACH
+        deferredApproach = null
         pendingPlace = target
     }
 
     override fun arrive(target: Place) {
         pendingPhase = Phase.ARRIVE
+        deferredApproach = null
         pendingPlace = target
     }
 
     override fun leave() {
         pendingPhase = Phase.JOURNEY
+        deferredApproach = null
         pendingLeave = true
     }
 
     override fun stay(target: Place) {
         pendingPhase = Phase.STAY
+        deferredApproach = null
         pendingPlace = target
+    }
+
+    override fun approachAfterStart(target: Place) {
+        deferredApproach = target
     }
 
     // ---------------- 出力 ----------------
@@ -122,6 +131,7 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
         it.pendingPhase = pendingPhase
         it.pendingPlace = pendingPlace
         it.pendingLeave = pendingLeave
+        it.deferredApproach = deferredApproach
         it.cur = cur
         it.motif = motif
         it.pushed = pushed
@@ -215,7 +225,16 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
         }
         if (index == 0) return Phase.START
         return when (phase) {
-            Phase.START -> Phase.JOURNEY
+            Phase.START -> {
+                val p = deferredApproach
+                if (p != null) {
+                    place = p
+                    deferredApproach = null
+                    Phase.APPROACH
+                } else {
+                    Phase.JOURNEY
+                }
+            }
             Phase.JOURNEY -> if (start - journeyStartSec >= config.interludeEverySec) Phase.INTERLUDE else Phase.JOURNEY
             Phase.INTERLUDE -> Phase.JOURNEY
             Phase.ARRIVE -> Phase.STAY

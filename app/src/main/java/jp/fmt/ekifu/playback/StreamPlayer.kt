@@ -63,6 +63,12 @@ class StreamPlayer(context: Context, private val listener: Listener) {
         stream?.post(action)
     }
 
+    /**
+     * 曲調の切り替え：約2秒でフェードアウトして、create で作るエンジンで作り直す。
+     * create には切り替える位置でのデモ台本の時刻を渡す。終わりのフェードアウト中は無視して false
+     */
+    fun switchEngine(create: (timelineSec: Double) -> SoundEngine): Boolean = stream?.switchEngine(create) ?: false
+
     /** prepare のあとで呼ぶ */
     fun play() {
         if (stream == null) return

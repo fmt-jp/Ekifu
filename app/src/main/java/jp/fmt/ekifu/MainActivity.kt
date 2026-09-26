@@ -52,7 +52,6 @@ class MainActivity : ComponentActivity() {
                     null -> PlayerScreen(
                         onPlay = { start(PlaybackMode.OMAKASE) },
                         onPlayDemo = { start(PlaybackMode.DEMO) },
-                        onPlayFusionDemo = { start(PlaybackMode.FUSION_DEMO) },
                         onResume = { controller?.play() },
                         onPause = { controller?.pause() },
                         onStop = { controller?.stop() },

@@ -224,6 +224,8 @@ object MusicConstants {
     const val FILLER_ATTACK_SEC = 0.3
     /** バッファ不足から戻るときのクロスフェード（仕様外・要調整） */
     const val UNDERRUN_CROSSFADE_SEC = 0.5
+    /** 曲調を切り替えるときのフェードアウト（12.12） */
+    const val STYLE_SWITCH_FADE_SEC = 2.0
     /** 画面表示用に状態を記録する間隔 */
     const val STATUS_INTERVAL_SEC = 0.25
 

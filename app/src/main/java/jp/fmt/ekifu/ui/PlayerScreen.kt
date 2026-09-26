@@ -58,7 +58,6 @@ import kotlinx.coroutines.delay
 fun PlayerScreen(
     onPlay: () -> Unit,
     onPlayDemo: () -> Unit,
-    onPlayFusionDemo: () -> Unit,
     onResume: () -> Unit,
     onPause: () -> Unit,
     onStop: () -> Unit,
@@ -135,7 +134,7 @@ fun PlayerScreen(
 
         if (debugVisible) {
             if (active && stream != null && status != null) DebugCard(ui, stream, status, nowMs)
-            DeveloperCard(ui, status, onPlayDemo, onPlayFusionDemo)
+            DeveloperCard(ui, status, onPlayDemo)
         }
     }
 }
@@ -191,32 +190,29 @@ private fun NowPlayingCard(ui: PlaybackBus.Ui, status: EngineStatus?, nowMs: Lon
                     Text("（一時停止中）", style = MaterialTheme.typography.bodySmall)
                 }
             }
-            if (ui.mode == PlaybackMode.FUSION_DEMO) {
-                Text("デモ再生・フュージョン", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.tertiary)
-                status.demoCue?.let { Text(it.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
-                Text(status.composer.chordLabel, style = MaterialTheme.typography.bodyLarge)
-                status.composer.heat?.let {
-                    Text(
-                        "熱量 %.2f・%.0f BPM".format(it, 60.0 / status.composer.beatSec),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                placeText(status)?.let {
-                    Text(it, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
-                }
-                return@Column
-            }
+            val heat = status.composer.heat
             if (ui.mode == PlaybackMode.DEMO) {
                 Text("デモ再生", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.tertiary)
                 status.demoCue?.let { cue ->
                     Text(cue.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text(
-                        "聞きどころ：${cue.hint}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    // 聞きどころは癒しの音で書いている
+                    if (heat == null) {
+                        Text(
+                            "聞きどころ：${cue.hint}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
+            }
+            if (heat != null) {
+                // フュージョン：セクション・和音と熱量・テンポ
+                Text(status.composer.chordLabel, style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "熱量 %.2f・%.0f BPM".format(heat, 60.0 / status.composer.beatSec),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             Text(
                 status.composer.scene.label,
@@ -340,7 +336,6 @@ private fun DeveloperCard(
     ui: PlaybackBus.Ui,
     status: EngineStatus?,
     onPlayDemo: () -> Unit,
-    onPlayFusionDemo: () -> Unit,
 ) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -350,9 +345,6 @@ private fun DeveloperCard(
             Text("開発用", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
             OutlinedButton(onClick = onPlayDemo, enabled = ui.state == PlaybackBus.State.IDLE) {
                 Text("デモ再生（自宅 → 公園 → 駅 → 職場）")
-            }
-            OutlinedButton(onClick = onPlayFusionDemo, enabled = ui.state == PlaybackBus.State.IDLE) {
-                Text("フュージョンのデモ再生（自宅 → 公園 → 駅 → 職場）")
             }
             if (ui.mode == PlaybackMode.OMAKASE || ui.state == PlaybackBus.State.IDLE) return@Column
             DemoScript.COMMUTE.cues.forEach { cue ->

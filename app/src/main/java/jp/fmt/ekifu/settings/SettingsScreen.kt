@@ -9,12 +9,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -28,10 +31,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import jp.fmt.ekifu.data.EkifuDatabase
+import jp.fmt.ekifu.engine.MusicStyle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -42,6 +47,7 @@ fun SettingsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val debugVisible by AppSettings.debugVisible.collectAsStateWithLifecycle()
+    val style by AppSettings.style.collectAsStateWithLifecycle()
     var confirmClear by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
 
@@ -61,6 +67,39 @@ fun SettingsScreen(onBack: () -> Unit) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = onBack) { Text("← 戻る") }
                 Text("設定", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            }
+
+            SettingCard {
+                Text("曲調", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    "再生中に変えると、約2秒でフェードアウトして新しい曲調の「始まり」から鳴らします。",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Column(Modifier.selectableGroup()) {
+                    MusicStyle.entries.forEach { s ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .selectable(
+                                    selected = s == style,
+                                    onClick = { AppSettings.setStyle(context, s) },
+                                    role = Role.RadioButton,
+                                )
+                                .padding(vertical = 4.dp),
+                        ) {
+                            RadioButton(selected = s == style, onClick = null)
+                            Column(Modifier.padding(start = 12.dp)) {
+                                Text(s.label, style = MaterialTheme.typography.bodyLarge)
+                                Text(
+                                    styleDescription(s),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                }
             }
 
             SettingCard {
@@ -119,6 +158,11 @@ fun SettingsScreen(onBack: () -> Unit) {
             dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("やめる") } },
         )
     }
+}
+
+private fun styleDescription(style: MusicStyle) = when (style) {
+    MusicStyle.HEALING -> "パッドとベルの穏やかなインストゥルメンタル"
+    MusicStyle.FUSION -> "明るいバンド編成のフュージョン。移動の速さで盛り上がりが変わる"
 }
 
 @Composable

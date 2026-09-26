@@ -61,6 +61,19 @@ class PlaceTracker(places: List<RegisteredPlace> = emptyList()) {
     private var first = true
     private val leftAtMs = HashMap<String, Long>()
 
+    /**
+     * 曲調を切り替えるときに新しいエンジンへ引き継ぐ状態（12.12）。
+     * 内側の円にいれば滞在、音に出している接近中なら接近（音を変えずに追いかけている再接近は道中のまま）
+     */
+    fun carryOver(scene: Scene?): CarryOver {
+        val cur = current
+        return when {
+            cur != null && state == State.ARRIVED -> CarryOver(scene, stayAt = cur.place)
+            cur != null && state == State.APPROACHING && !silent -> CarryOver(scene, approaching = cur.place)
+            else -> CarryOver(scene)
+        }
+    }
+
     /** 地点の登録・編集・削除を反映する */
     fun setPlaces(newPlaces: List<RegisteredPlace>) {
         places = newPlaces

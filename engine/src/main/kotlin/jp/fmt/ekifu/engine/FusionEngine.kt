@@ -12,6 +12,8 @@ class FusionEngine private constructor(
     private var synth: FusionSynth,
     private val script: DemoScript?,
     override val sampleRate: Int,
+    /** デモ台本のどこから始めたか（曲調の切り替えで続きから鳴らすとき） */
+    private val scriptStartSec: Double,
 ) : SoundEngine {
 
     constructor(
@@ -19,10 +21,12 @@ class FusionEngine private constructor(
         config: FusionComposerConfig = FusionComposerConfig(),
         script: DemoScript? = null,
         sampleRate: Int = C.SAMPLE_RATE,
-    ) : this(FusionComposer(seed, config), FusionSynth(sampleRate, seed), script, sampleRate)
+        scriptStartSec: Double = 0.0,
+    ) : this(FusionComposer(seed, config), FusionSynth(sampleRate, seed), script, sampleRate, scriptStartSec)
 
-    private var cueIndex = 0
-    private var currentCue: DemoCue? = null
+    // それより前の台本は引き継いだ状態（CarryOver）として反映済み
+    private var cueIndex = script?.firstCueAfter(scriptStartSec) ?: 0
+    private var currentCue: DemoCue? = script?.cueAt(scriptStartSec)
 
     override val frame: Long get() = synth.frame
 
@@ -45,7 +49,7 @@ class FusionEngine private constructor(
     private fun beginBlock() {
         val now = elapsedSec
         script?.let { s ->
-            while (cueIndex < s.cues.size && s.cues[cueIndex].atSec <= now) {
+            while (cueIndex < s.cues.size && s.cues[cueIndex].atSec <= now + scriptStartSec) {
                 val cue = s.cues[cueIndex++]
                 cue.action(composer)
                 currentCue = cue
@@ -55,7 +59,7 @@ class FusionEngine private constructor(
         synth.schedule(composer.composeUntil(blockEnd + C.COMPOSE_LOOKAHEAD_SEC))
     }
 
-    override fun copy(): FusionEngine = FusionEngine(composer.copy(), synth.copy(), script, sampleRate).also {
+    override fun copy(): FusionEngine = FusionEngine(composer.copy(), synth.copy(), script, sampleRate, scriptStartSec).also {
         it.cueIndex = cueIndex
         it.currentCue = currentCue
     }

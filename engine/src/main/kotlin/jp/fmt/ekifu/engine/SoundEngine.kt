@@ -10,6 +10,9 @@ interface ComposerInput {
     fun arrive(target: Place)
     fun leave()
     fun stay(target: Place)
+
+    /** 「始まり」を鳴らし終えてから接近に入る（曲調の切り替えで、接近中だった場合） */
+    fun approachAfterStart(target: Place)
 }
 
 /** PCM を順番に書き出すもの（終わりのフェードアウトやバッファ不足のつなぎに使う） */
