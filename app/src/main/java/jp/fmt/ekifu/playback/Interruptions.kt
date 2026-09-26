@@ -13,8 +13,9 @@ import androidx.core.content.ContextCompat
 
 /**
  * 割り込みへの対応（3章・11章）。
- * - 再生中はオーディオフォーカスを持つ。電話の着信・他アプリの再生・通知音などでフォーカスを失ったら一時停止する
- *   （ユーザーと決めたとおり、短い割り込みでも自動では再開しない）
+ * - 再生中はオーディオフォーカスを持つ。電話の着信・他アプリの再生でフォーカスを失ったら一時停止する
+ *   （ユーザーと決めたとおり、自動では再開しない）
+ * - 通知音など「音量を下げてほしい」割り込み（ダッキング）では止めず、Android に音量を下げてもらって続ける
  * - イヤホンが抜けたら（ACTION_AUDIO_BECOMING_NOISY）一時停止する
  * onInterrupted はメインスレッドで呼ばれる。
  */
@@ -32,15 +33,16 @@ class Interruptions(context: Context, private val onInterrupted: () -> Unit) {
                 .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
                 .build(),
         )
-        // 通知音などで勝手に音量を下げられるのではなく、こちらで一時停止する
-        .setWillPauseWhenDucked(true)
+        // 通知音などでは、Android が自動で音量を下げ、鳴り終われば戻す（こちらでは何もしない）
+        .setWillPauseWhenDucked(false)
         .setOnAudioFocusChangeListener({ change ->
             when (change) {
                 AudioManager.AUDIOFOCUS_LOSS,
                 AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
-                AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK,
                 -> interrupted()
-                else -> Unit // 戻ってきても自動では再開しない
+                // AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK（通知音など）は止めない。
+                // 戻ってきた（GAIN）ときも、一時停止していれば自動では再開しない
+                else -> Unit
             }
         }, handler)
         .build()
