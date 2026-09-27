@@ -56,6 +56,8 @@ data class SceneUi(
     /** 追いかけている地点と状態（接近中・到着） */
     val trackedName: String? = null,
     val trackedState: PlaceTracker.State = PlaceTracker.State.NONE,
+    /** 離れたあと30分以内で、接近を音に出さずに追いかけている */
+    val trackedSilent: Boolean = false,
     /** 位置の取得間隔（秒）。登録地点の近くでは短い */
     val locationIntervalSec: Int? = null,
 )
@@ -119,6 +121,7 @@ class SceneSource(
             nearestDistanceM = nearest?.second,
             trackedName = tracker.current?.name,
             trackedState = tracker.state,
+            trackedSilent = tracker.isSilent,
         )
         adjustInterval(fix)
         onUi(ui)

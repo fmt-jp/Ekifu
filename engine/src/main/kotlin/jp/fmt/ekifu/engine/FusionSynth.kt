@@ -1,6 +1,7 @@
 package jp.fmt.ekifu.engine
 
 import jp.fmt.ekifu.engine.dsp.BassVoice2
+import jp.fmt.ekifu.engine.dsp.BellVoice
 import jp.fmt.ekifu.engine.dsp.Biquad
 import jp.fmt.ekifu.engine.dsp.BrassVoice
 import jp.fmt.ekifu.engine.dsp.Chorus
@@ -13,6 +14,7 @@ import jp.fmt.ekifu.engine.dsp.Limiter
 import jp.fmt.ekifu.engine.dsp.MembraneVoice
 import jp.fmt.ekifu.engine.dsp.NoiseVoice
 import jp.fmt.ekifu.engine.dsp.StereoDelay
+import jp.fmt.ekifu.engine.dsp.Voice
 import jp.fmt.ekifu.engine.dsp.panLeft
 import jp.fmt.ekifu.engine.dsp.panRight
 import java.util.PriorityQueue
@@ -56,6 +58,8 @@ class FusionSynth(private val sampleRate: Int = C.SAMPLE_RATE, noiseSeed: Int = 
     private var drums = ArrayList<FusionVoice>()
     private var hats = ArrayList<FusionVoice>()
     private var lead = LeadVoice(sampleRate)
+    /** 地点のテーマのベル（癒しと同じ音色） */
+    private var bells = ArrayList<Voice>()
 
     private var brassLp = Biquad(sampleRate, F.BRASS_LOWPASS_HZ)
     private var chorus = Chorus(sampleRate)
@@ -81,7 +85,7 @@ class FusionSynth(private val sampleRate: Int = C.SAMPLE_RATE, noiseSeed: Int = 
     var frame = 0L
         private set
 
-    val activeVoices: Int get() = brass.size + bass.size + drums.size + hats.size + (if (lead.sounding) 1 else 0)
+    val activeVoices: Int get() = brass.size + bass.size + drums.size + hats.size + bells.size + (if (lead.sounding) 1 else 0)
 
     fun schedule(events: List<FusionEvent>) {
         for (e in events) {
@@ -122,6 +126,7 @@ class FusionSynth(private val sampleRate: Int = C.SAMPLE_RATE, noiseSeed: Int = 
         it.drums = ArrayList(drums.map { v -> v.copy() })
         it.hats = ArrayList(hats.map { v -> v.copy() })
         it.lead = lead.copy()
+        it.bells = ArrayList(bells.map { v -> v.copy() })
         it.brassLp = brassLp.copy()
         it.chorus = chorus.copy()
         it.bassLp = bassLp.copy()
@@ -165,17 +170,29 @@ class FusionSynth(private val sampleRate: Int = C.SAMPLE_RATE, noiseSeed: Int = 
             val lR = ld * leadR
             val dr = sum(drums) * center
             val h = sum(hats)
+            var belL = 0.0
+            var belR = 0.0
+            var bi = 0
+            while (bi < bells.size) {
+                val v = bells[bi]
+                val s = v.next()
+                belL += s * v.gainL
+                belR += s * v.gainR
+                if (v.finished) bells.removeAt(bi) else bi++
+            }
 
             // 空間系への送り（ハイハットは送らない）
             val revIn = (bL + bR) * 0.5 * F.BRASS_SEND.reverb + (lL + lR) * 0.5 * F.LEAD_SEND.reverb +
-                bs * F.BASS_SEND.reverb + dr * F.DRUM_SEND.reverb
-            val dlL = bL * F.BRASS_SEND.delay + lL * F.LEAD_SEND.delay + bs * F.BASS_SEND.delay + dr * F.DRUM_SEND.delay
-            val dlR = bR * F.BRASS_SEND.delay + lR * F.LEAD_SEND.delay + bs * F.BASS_SEND.delay + dr * F.DRUM_SEND.delay
+                bs * F.BASS_SEND.reverb + dr * F.DRUM_SEND.reverb + (belL + belR) * 0.5 * F.BELL_SEND.reverb
+            val dlL = bL * F.BRASS_SEND.delay + lL * F.LEAD_SEND.delay + bs * F.BASS_SEND.delay + dr * F.DRUM_SEND.delay +
+                belL * F.BELL_SEND.delay
+            val dlR = bR * F.BRASS_SEND.delay + lR * F.LEAD_SEND.delay + bs * F.BASS_SEND.delay + dr * F.DRUM_SEND.delay +
+                belR * F.BELL_SEND.delay
             reverb.process(revIn)
             delay.process(dlL, dlR)
 
-            var l = bL + lL + bs + dr + h * hatL + reverb.outL * F.REVERB_RETURN + delay.outL * F.DELAY_RETURN
-            var r = bR + lR + bs + dr + h * hatR + reverb.outR * F.REVERB_RETURN + delay.outR * F.DELAY_RETURN
+            var l = bL + lL + bs + dr + h * hatL + belL + reverb.outL * F.REVERB_RETURN + delay.outL * F.DELAY_RETURN
+            var r = bR + lR + bs + dr + h * hatR + belR + reverb.outR * F.REVERB_RETURN + delay.outR * F.DELAY_RETURN
 
             l = masterL.process(l)
             r = masterR.process(r)
@@ -227,6 +244,7 @@ class FusionSynth(private val sampleRate: Int = C.SAMPLE_RATE, noiseSeed: Int = 
                 delay.setDelaySec(action.delaySec)
                 delay.feedback = action.delayFeedback
             }
+            is BellNote -> bells += BellVoice(sampleRate, Scale.midiToHz(action.midi.toDouble()), action.gain, F.BELL_PAN)
             is FusionFadeOut -> fadeStep = 1.0 / (action.durationSec * sampleRate)
         }
     }

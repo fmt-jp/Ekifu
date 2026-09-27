@@ -92,4 +92,51 @@ class FusionThemeTest {
             notes.withIndex().all { (i, x) -> abs(stepOf(x, next) - i * F.THEME_NOTE_STEPS) == 0 }
         assertTrue(!same, "離れたあとも毎ブロックテーマを吹いている")
     }
+
+    private fun bellsIn(events: List<FusionEvent>, b: FusionBlock) =
+        events.filterIsInstance<BellNote>().filter { it.timeSec >= b.startSec - 0.01 && it.timeSec < b.endSec - 0.01 }.sortedBy { it.timeSec }
+
+    @Test
+    fun bellRingsTheThemeLikeThePreview() {
+        val (events, blocks) = run(14, mapOf(2 to { it.approach(park) }, 4 to { it.arrive(park) }, 10 to { it.leave() }))
+        val theme = Motifs.theme(park.themeSeed)
+        fun check(b: FusionBlock, gain: Double, what: String, passes: Int = 1) {
+            val bells = bellsIn(events, b)
+            assertEquals(theme.size * passes, bells.size, "$what：ベルの数")
+            bells.chunked(theme.size).forEach { pass ->
+                // 試聴と同じ音の並び（調だけ移す）
+                assertEquals(intervals(theme), intervals(pass.map { it.midi }), "$what：ベルの音の並び")
+                assertTrue(abs(pass.first().midi - theme.first()) <= 6, "$what：試聴の音域から離れすぎ")
+            }
+            assertEquals(gain, bells.first().gain, 1e-9, "$what：ベルの音量")
+        }
+        blocks.filter { it.phase == Phase.APPROACH }.forEach { check(it, F.BELL_APPROACH_GAIN, "接近 ${it.index}") }
+        val arrive = blocks.first { it.phase == Phase.ARRIVE }
+        check(arrive, F.BELL_ARRIVE_GAIN, "到着", passes = 2)
+        // 滞在：到着の直後のブロックは鳴らさず、そこから1ブロックおき
+        val stays = blocks.filter { it.phase == Phase.STAY }
+        assertTrue(stays.size >= 4)
+        stays.forEachIndexed { i, b ->
+            if ((i + 1) % F.BELL_STAY_EVERY_BLOCKS == 0) check(b, F.BELL_STAY_GAIN, "滞在 ${b.index}")
+            else assertTrue(bellsIn(events, b).isEmpty(), "滞在 ${b.index} で鳴った")
+        }
+        val leave = blocks.first { it.index > arrive.index && it.phase == Phase.JOURNEY }
+        check(leave, F.BELL_LEAVE_GAIN, "離れる")
+        assertTrue(bellsIn(events, blocks.first { it.index == leave.index + 1 }).isEmpty(), "離れたあとも鳴り続けた")
+        // 道中だけのブロックでは鳴らさない
+        assertTrue(blocks.filter { it.index < 2 }.all { bellsIn(events, it).isEmpty() })
+    }
+
+    @Test
+    fun bellIsAudibleInTheMix() {
+        val synth = FusionSynth()
+        val theme = Motifs.theme(park.themeSeed)
+        synth.schedule(theme.mapIndexed { i, m -> BellNote(0.1 + i * 0.45, m, F.BELL_ARRIVE_GAIN) })
+        val frames = C.SAMPLE_RATE * 3
+        val out = ShortArray(frames * 2)
+        synth.render(out, frames, 0)
+        val peak = out.maxOf { abs(it.toInt()) }
+        assertTrue(peak > 3000, "ベルが小さすぎる: $peak")
+        assertTrue(peak < 32767, "ベルが割れている")
+    }
 }

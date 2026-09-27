@@ -103,6 +103,9 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
 
     private class Tail(val block: FusionBlock, val startSec: Double, val events: List<FusionEvent>)
 
+    /** 滞在に入ってからのブロック数（滞在中のベルを1ブロックおきに鳴らすため） */
+    private var stayBlocks = 0
+
     /** 最後の小節をつなぎに差し替えたブロック（画面の表示用。最近のものだけ） */
     private var transitions = mapOf<Int, FusionTransition>()
 
@@ -184,6 +187,7 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
         it.lastKime = lastKime
         it.tail = tail
         it.transitions = transitions
+        it.stayBlocks = stayBlocks
     }
 
     /** そのブロックの最後の小節に入れたつなぎ（なければ null） */
@@ -272,6 +276,19 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
                 val opening = if (phase == Phase.APPROACH) place else leftPlace
                 Lead(block, firstMotif, events, opening).write()
             }
+        }
+        // 試聴と同じベルでテーマを重ねる：到着は大きく2回、接近中と離れるときは各ブロックの頭、滞在中は1ブロックおき
+        stayBlocks = if (phase == Phase.STAY) stayBlocks + 1 else 0
+        val p = place
+        when {
+            phase == Phase.ARRIVE && p != null -> {
+                bellTheme(block, p, 0.0, F.THEME_NOTE_STEPS, F.BELL_ARRIVE_GAIN, events)
+                bellTheme(block, p, 2.0 * F.STEPS_PER_BAR, F.ARRIVAL_THEME_SLOW_STEPS, F.BELL_ARRIVE_SLOW_GAIN, events)
+            }
+            phase == Phase.APPROACH && p != null -> bellTheme(block, p, 0.0, F.THEME_NOTE_STEPS, F.BELL_APPROACH_GAIN, events)
+            phase == Phase.STAY && p != null && stayBlocks % F.BELL_STAY_EVERY_BLOCKS == 0 ->
+                bellTheme(block, p, 0.0, F.THEME_NOTE_STEPS, F.BELL_STAY_GAIN, events)
+            leftPlace != null -> bellTheme(block, leftPlace, 0.0, F.THEME_NOTE_STEPS, F.BELL_LEAVE_GAIN, events)
         }
         val all = Humanizer(Mulberry32(rng.nextInt(Int.MAX_VALUE))).apply(events, block)
         // 最後の小節は持っておく（揺らしで少し早まった音も含めるよう、半ステップ手前で分ける）
@@ -901,14 +918,26 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
 
     // ---------------- 音階の道具 ----------------
 
+    /** 癒しの調（F）から ch の調へ、近い向きに移す半音数 */
+    private fun themeShift(ch: FusionChord): Int {
+        val shift = ((ch.keyPc - C.TONIC_PITCH_CLASS) % 12 + 12) % 12
+        return if (shift > 6) shift - 12 else shift
+    }
+
+    /** ベルで地点のテーマを鳴らす。音の高さは試聴と同じ音域のまま、調だけ移す */
+    private fun bellTheme(block: FusionBlock, p: Place, fromStep: Double, noteSteps: Int, gain: Double, out: MutableList<FusionEvent>) {
+        val ch = block.chordAt(block.startSec + fromStep * block.stepSec)
+        Motifs.theme(p.themeSeed).forEachIndexed { i, midi ->
+            out += BellNote(block.startSec + (fromStep + i * noteSteps) * block.stepSec, midi + themeShift(ch), gain)
+        }
+    }
+
     /**
      * 地点のテーマ（試聴と同じ音の並び）を、ch の調に移してリードの音域に収める。
      * テーマは癒しの調（F のペンタトニック）で作られているので、F → ch の調へ近い向きに移す
      */
     private fun themeNotes(themeSeed: Int, ch: FusionChord): List<Int> {
-        var shift = ((ch.keyPc - C.TONIC_PITCH_CLASS) % 12 + 12) % 12
-        if (shift > 6) shift -= 12
-        var notes = Motifs.theme(themeSeed).map { it + shift }
+        var notes = Motifs.theme(themeSeed).map { it + themeShift(ch) }
         while (notes.max() > F.LEAD_MAX_MIDI) notes = notes.map { it - 12 }
         while (notes.min() < F.LEAD_MIN_MIDI) notes = notes.map { it + 12 }
         return notes

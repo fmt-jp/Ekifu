@@ -15,8 +15,8 @@ android {
         applicationId = "jp.fmt.ekifu"
         minSdk = 26
         targetSdk = 35
-        versionCode = 10
-        versionName = "0.6.4-place-theme"
+        versionCode = 11
+        versionName = "0.6.5-place-bell"
     }
 
     signingConfigs {

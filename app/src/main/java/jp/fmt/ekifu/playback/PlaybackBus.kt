@@ -24,6 +24,8 @@ object PlaybackBus {
         val stream: StreamStatus? = null,
         /** おまかせ再生の場面（デモ再生では null） */
         val scene: SceneUi? = null,
+        /** 地点の演出が鳴り始めた記録（新しいものが下。デバッグ表示用） */
+        val placeLog: List<String> = emptyList(),
     )
 
     private val _ui = MutableStateFlow(Ui())
@@ -42,6 +44,16 @@ object PlaybackBus {
     fun updateStream(stream: StreamStatus) {
         _ui.update { it.copy(stream = stream) }
     }
+
+    fun logPlace(line: String) {
+        _ui.update { it.copy(placeLog = (it.placeLog + line).takeLast(PLACE_LOG_SIZE)) }
+    }
+
+    fun clearPlaceLog() {
+        _ui.update { it.copy(placeLog = emptyList()) }
+    }
+
+    private const val PLACE_LOG_SIZE = 5
 
     fun updateScene(scene: SceneUi?) {
         _ui.update { it.copy(scene = scene) }

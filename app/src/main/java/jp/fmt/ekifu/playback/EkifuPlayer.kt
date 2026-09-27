@@ -40,6 +40,7 @@ class EkifuPlayer(context: Context) : SimpleBasePlayer(Looper.getMainLooper()) {
     private val handler = Handler(Looper.getMainLooper())
     private val audio = StreamPlayer(context.applicationContext, object : StreamPlayer.Listener {
         override fun onStatus(status: StreamStatus) {
+            logPlacePhase(status)
             val sub = subtitleFor(status)
             if (PlaybackBus.hasSubscribers) PlaybackBus.updateStream(status)
             if (sub != postedSubtitle) {
@@ -168,6 +169,8 @@ class EkifuPlayer(context: Context) : SimpleBasePlayer(Looper.getMainLooper()) {
         if (audio.isPrepared) return
         mode = PlaybackBus.requestedMode
         style = AppSettings.style.value
+        PlaybackBus.clearPlaceLog()
+        loggedPhase = null
         subtitle = defaultSubtitle()
         postedSubtitle = subtitle
         when (mode) {
@@ -291,6 +294,30 @@ class EkifuPlayer(context: Context) : SimpleBasePlayer(Looper.getMainLooper()) {
             else -> PlaybackBus.State.PAUSED
         }
         PlaybackBus.update(state, mode, audio.status())
+    }
+
+    /** 書き込みスレッドから：いま聞こえている位置でフェーズが変わったら、地点の演出として記録する */
+    @Volatile private var loggedPhase: Phase? = null
+    private var loggedPlace: String? = null
+
+    private fun logPlacePhase(status: StreamStatus) {
+        val c = status.engine?.composer ?: return
+        if (status.ending || c.phase == loggedPhase) return
+        val prev = loggedPhase
+        val label = when (c.phase) {
+            Phase.APPROACH -> "接近"
+            Phase.ARRIVE -> "到着"
+            Phase.STAY -> if (prev == Phase.ARRIVE) null else "滞在（演出なし）"
+            Phase.JOURNEY -> if (prev == Phase.APPROACH || prev == Phase.ARRIVE || prev == Phase.STAY) "離れる" else null
+            else -> null
+        }
+        val name = c.place?.name ?: loggedPlace
+        if (label != null && prev != null) {
+            val s = status.playSec.toInt()
+            PlaybackBus.logPlace("%d:%02d %s（%s）".format(s / 60, s % 60, label, name ?: "—"))
+        }
+        loggedPhase = c.phase
+        loggedPlace = c.place?.name
     }
 
     private fun subtitleFor(status: StreamStatus): String {

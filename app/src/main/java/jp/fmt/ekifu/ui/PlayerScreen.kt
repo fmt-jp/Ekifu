@@ -309,11 +309,17 @@ private fun DebugCard(ui: PlaybackBus.Ui, stream: StreamStatus, status: EngineSt
                     "判定",
                     when (sc.trackedState) {
                         PlaceTracker.State.NONE -> "なし"
-                        PlaceTracker.State.APPROACHING -> "${sc.trackedName}に接近中"
+                        PlaceTracker.State.APPROACHING ->
+                            if (sc.trackedSilent) "${sc.trackedName}の外側の円の中（離れたあと・演出なし）" else "${sc.trackedName}に接近中"
                         PlaceTracker.State.ARRIVED -> "${sc.trackedName}に到着"
                     },
                 )
                 DebugRow("位置の取得間隔", sc.locationIntervalSec?.let { "${it / 60}分" } ?: "—")
+            }
+            // 接近・到着・離れるの演出が鳴り始めた再生時刻
+            DebugRow("演出の記録", if (ui.placeLog.isEmpty()) "まだなし" else "")
+            ui.placeLog.forEach { line ->
+                Text(line, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
             }
             DebugRow("鳴っている音", "${status.activeVoices}")
             DebugRow("バッファ残量", "%.1f 秒".format(stream.bufferedSec))

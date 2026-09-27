@@ -29,8 +29,11 @@ sealed interface PlaceEvent {
     /** 再生を始めたときすでに内側の円の中にいた：演出なしで滞在から */
     data class StayAtStart(override val place: RegisteredPlace) : PlaceEvent
 
-    /** 外側の円から出た：テーマを一度だけ静かに鳴らして道中へ */
+    /** 離れた（到着中は内側の円、接近中は外側の円から出た）：テーマを一度だけ静かに鳴らして道中へ */
     data class Leave(override val place: RegisteredPlace) : PlaceEvent
+
+    /** 内側の円から離れて30分以内にまた入った：到着の演出なしで滞在に戻る（位置のぶれで演出を繰り返さない） */
+    data class Return(override val place: RegisteredPlace) : PlaceEvent
 }
 
 /**
@@ -58,8 +61,11 @@ class PlaceTracker(places: List<RegisteredPlace> = emptyList()) {
 
     /** 接近を音に出さずに追いかけている（30分以内の再接近） */
     private var silent = false
+    val isSilent: Boolean get() = silent
     private var first = true
     private val leftAtMs = HashMap<String, Long>()
+    /** 到着中に内側の円から離れた時刻 */
+    private val leftInnerAtMs = HashMap<String, Long>()
 
     /**
      * 曲調を切り替えるときに新しいエンジンへ引き継ぐ状態（12.12）。
@@ -94,17 +100,19 @@ class PlaceTracker(places: List<RegisteredPlace> = emptyList()) {
         val events = ArrayList<PlaceEvent>(2)
         val cur = current
 
-        // いま追いかけている地点から出たか
+        // いま追いかけている地点から出たか（到着中は内側の円、接近中は外側の円。どちらも半径の1.2倍を超えたら）
         if (cur != null) {
             val d = distance(cur, fix)
-            if (d > cur.approachRadiusM * P.EXIT_RADIUS_FACTOR) {
+            val exitRadius = if (state == State.ARRIVED) cur.arriveRadiusM else cur.approachRadiusM
+            if (d > exitRadius * P.EXIT_RADIUS_FACTOR) {
                 if (!silent || state == State.ARRIVED) events += PlaceEvent.Leave(cur)
                 leftAtMs[cur.id] = fix.timeMs
+                if (state == State.ARRIVED) leftInnerAtMs[cur.id] = fix.timeMs
                 current = null
                 state = State.NONE
                 silent = false
             } else if (state != State.ARRIVED && d <= cur.arriveRadiusM) {
-                arrive(cur, events)
+                arrive(cur, events, fix)
                 return events
             }
         }
@@ -122,7 +130,7 @@ class PlaceTracker(places: List<RegisteredPlace> = emptyList()) {
                     silent = false
                     events += PlaceEvent.StayAtStart(inner)
                 } else {
-                    arrive(inner, events)
+                    arrive(inner, events, fix)
                 }
                 return events
             }
@@ -144,11 +152,12 @@ class PlaceTracker(places: List<RegisteredPlace> = emptyList()) {
         return events
     }
 
-    private fun arrive(p: RegisteredPlace, events: MutableList<PlaceEvent>) {
+    private fun arrive(p: RegisteredPlace, events: MutableList<PlaceEvent>, fix: LocationFix) {
         current = p
         state = State.ARRIVED
         silent = false
-        events += PlaceEvent.Arrive(p)
+        val left = leftInnerAtMs[p.id]
+        events += if (left != null && fix.timeMs - left < P.REAPPROACH_SUPPRESS_MS) PlaceEvent.Return(p) else PlaceEvent.Arrive(p)
     }
 
     /** 一番近い登録地点とその距離（画面表示用） */
@@ -173,6 +182,7 @@ fun applyPlaceEvents(events: List<PlaceEvent>, composer: ComposerInput) {
             is PlaceEvent.Approach -> composer.approach(e.place.place)
             is PlaceEvent.Arrive -> composer.arrive(e.place.place)
             is PlaceEvent.StayAtStart -> composer.stay(e.place.place)
+            is PlaceEvent.Return -> composer.stay(e.place.place)
             is PlaceEvent.Leave -> if (!entering) composer.leave()
         }
     }

@@ -231,6 +231,18 @@ object FusionConstants {
     /** 到着の3〜5小節目で、テーマをゆっくり吹き直すときの1音の長さ（二分音符） */
     const val ARRIVAL_THEME_SLOW_STEPS = 8
 
+    // ---- 地点のテーマのベル（ユーザーと決めたこと：試聴と同じ音色で重ねる。音量は仕様外・要調整） ----
+    /** 到着（1回目）・到着の吹き直し・接近中の各ブロック・離れるとき・滞在中（1ブロックおき） */
+    val BELL_ARRIVE_GAIN = db(-8.0)
+    val BELL_ARRIVE_SLOW_GAIN = db(-12.0)
+    val BELL_APPROACH_GAIN = db(-14.0)
+    val BELL_LEAVE_GAIN = db(-14.0)
+    val BELL_STAY_GAIN = db(-18.0)
+    /** 滞在中は、この数のブロックごとにベルでテーマを鳴らす（到着の直後のブロックは鳴らさない） */
+    const val BELL_STAY_EVERY_BLOCKS = 2
+    const val BELL_PAN = -0.1
+    val BELL_SEND = Sends(reverb = 0.35, delay = 0.35)
+
     // ---- キメの型とフェーズのつなぎ（仕様外・要調整。参照実装のキメは1種類で、フェーズのつなぎはない） ----
     /** キメの型を選ぶ重み（FusionKime の順：基本・3-3-2・裏から・3連打・ブレイク）。前と同じ型は続けない */
     val KIME_WEIGHTS = doubleArrayOf(3.0, 2.0, 2.0, 2.0, 1.5)

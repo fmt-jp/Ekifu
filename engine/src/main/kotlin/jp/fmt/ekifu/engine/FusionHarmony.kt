@@ -135,4 +135,7 @@ data class FusionControl(
     val delayFeedback: Double = F.DELAY_FEEDBACK,
 ) : FusionEvent
 
+/** 地点のテーマを試聴と同じベルの音色で重ねる（ユーザーと決めたこと） */
+data class BellNote(override val timeSec: Double, val midi: Int, val gain: Double) : FusionEvent
+
 data class FusionFadeOut(override val timeSec: Double, val durationSec: Double) : FusionEvent

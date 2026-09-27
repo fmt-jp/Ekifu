@@ -46,15 +46,43 @@ class PlaceTrackerTest {
     }
 
     @Test
-    fun leavingIsJudgedOnlyBeyond1_2TimesRadius() {
+    fun arrivedPlaceIsLeftBeyond1_2TimesTheInnerRadius() {
         val t = PlaceTracker(listOf(park))
         t.update(at(2000.0, 0.0))
         assertTrue(t.update(at(50.0, 1.0)).single() is PlaceEvent.Arrive)
-        assertTrue(t.update(at(550.0, 2.0)).isEmpty(), "外側の円を出ても 1.2倍（600m）までは滞在のまま")
-        assertTrue(t.update(at(590.0, 3.0)).isEmpty())
-        val leave = t.update(at(610.0, 4.0))
+        assertTrue(t.update(at(110.0, 2.0)).isEmpty(), "内側の円を出ても 1.2倍（120m）までは滞在のまま")
+        val leave = t.update(at(130.0, 3.0))
         assertTrue(leave.single() is PlaceEvent.Leave)
+        // 外側の円の中にいるあいだは、音を変えずに追いかける（接近は鳴らさない）
+        assertEquals(PlaceTracker.State.APPROACHING, t.state)
+        assertTrue(t.update(at(400.0, 4.0)).isEmpty())
+        // 外側の円を出ても、もう離れる演出は鳴らさない
+        assertTrue(t.update(at(700.0, 5.0)).isEmpty())
         assertEquals(PlaceTracker.State.NONE, t.state)
+    }
+
+    @Test
+    fun approachingPlaceIsLeftBeyond1_2TimesTheOuterRadius() {
+        val t = PlaceTracker(listOf(park))
+        t.update(at(2000.0, 0.0))
+        assertTrue(t.update(at(450.0, 1.0)).single() is PlaceEvent.Approach)
+        assertTrue(t.update(at(590.0, 2.0)).isEmpty(), "外側の円を出ても 1.2倍（600m）までは接近のまま")
+        assertTrue(t.update(at(610.0, 3.0)).single() is PlaceEvent.Leave)
+    }
+
+    @Test
+    fun returningInsideWithin30MinutesStaysWithoutArrival() {
+        val t = PlaceTracker(listOf(park))
+        t.update(at(2000.0, 0.0))
+        t.update(at(50.0, 1.0))
+        assertTrue(t.update(at(150.0, 2.0)).single() is PlaceEvent.Leave)
+        // 位置のぶれで戻ってきても、到着の演出は繰り返さない
+        assertTrue(t.update(at(60.0, 3.0)).single() is PlaceEvent.Return)
+        assertEquals(PlaceTracker.State.ARRIVED, t.state)
+        assertTrue(t.update(at(150.0, 4.0)).single() is PlaceEvent.Leave)
+        // 30分たってから入れば、また到着
+        t.update(at(2000.0, 10.0))
+        assertTrue(t.update(at(60.0, 40.0)).single() is PlaceEvent.Arrive)
     }
 
     @Test
