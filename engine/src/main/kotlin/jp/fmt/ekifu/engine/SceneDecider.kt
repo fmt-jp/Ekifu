@@ -92,14 +92,16 @@ object SceneTiming {
         if (speed == Speed.VEHICLE) C.VEHICLE_SCENE_INTERVAL_SEC else C.SCENE_INTERVAL_SEC
 
     /** 位置の取得間隔：登録地点の近く（1.5km以内）か乗り物のあいだは短く */
-    fun locationIntervalSec(nearPlace: Boolean, speed: Speed?): Double = when {
+    fun locationIntervalSec(nearPlace: Boolean, speed: Speed?, arrived: Boolean = false): Double = when {
+        // 到着したあとは電池を控え、離れたかどうかを1分ごとに確かめるだけにする
+        arrived -> PlaceConstants.ARRIVED_LOCATION_INTERVAL_SEC
         nearPlace -> PlaceConstants.NEAR_LOCATION_INTERVAL_SEC
         speed == Speed.VEHICLE -> C.VEHICLE_SCENE_INTERVAL_SEC
         else -> C.SCENE_INTERVAL_SEC
     }
 
-    /** 高精度（GPS）で位置を取るか：登録地点の近く（1.5km以内）だけ */
-    fun highAccuracy(nearPlace: Boolean): Boolean = nearPlace
+    /** 高精度（GPS）で位置を取るか：登録地点の近く（1.5km以内）で、まだ到着していないあいだだけ */
+    fun highAccuracy(nearPlace: Boolean, arrived: Boolean = false): Boolean = nearPlace && !arrived
 
     /** 新しく決めた場面に切り替えるか。current はいま鳴っている場面、sinceSwitchSec はその場面にしてからの時間 */
     fun shouldSwitch(current: Scene?, next: Scene, sinceSwitchSec: Double): Boolean =

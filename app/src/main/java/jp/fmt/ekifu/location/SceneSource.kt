@@ -99,7 +99,7 @@ class SceneSource(
 
     private val callback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
-            result.lastLocation?.let { onFix(LocationFix(it.latitude, it.longitude, it.time)) }
+            result.lastLocation?.let { onFix(it.toFix()) }
         }
     }
 
@@ -130,11 +130,15 @@ class SceneSource(
         onUi(ui)
     }
 
-    /** 登録地点の1.5km以内は GPS で15秒ごと、乗り物のあいだは1分ごと、それ以外は5分ごと */
+    /**
+     * 登録地点の1.5km以内は GPS で15秒ごと（到着したあとは省電力で1分ごと）、
+     * 乗り物のあいだは1分ごと、それ以外は5分ごと
+     */
     private fun adjustInterval(fix: LocationFix) {
         val near = tracker.isNear(fix)
-        val wanted = (SceneTiming.locationIntervalSec(near, currentSpeed()) * 1000).toLong()
-        val high = SceneTiming.highAccuracy(near)
+        val arrived = tracker.state == PlaceTracker.State.ARRIVED
+        val wanted = (SceneTiming.locationIntervalSec(near, currentSpeed(), arrived) * 1000).toLong()
+        val high = SceneTiming.highAccuracy(near, arrived)
         if ((wanted != intervalMs || high != highAccuracy) && ticker != null) requestUpdates(wanted, high)
     }
 
@@ -251,7 +255,7 @@ class SceneSource(
             try {
                 fused.getCurrentLocation(Priority.PRIORITY_BALANCED_POWER_ACCURACY, cancel.token)
                     .addOnSuccessListener { loc ->
-                        if (cont.isActive) cont.resume(loc?.let { LocationFix(it.latitude, it.longitude, it.time) })
+                        if (cont.isActive) cont.resume(loc?.toFix())
                     }
                     .addOnFailureListener { if (cont.isActive) cont.resume(null) }
             } catch (e: SecurityException) {
@@ -259,6 +263,9 @@ class SceneSource(
             }
         }
     }
+
+    private fun android.location.Location.toFix() =
+        LocationFix(latitude, longitude, time, if (hasAccuracy()) accuracy.toDouble() else null)
 
     companion object {
         private const val TAG = "ekifu"

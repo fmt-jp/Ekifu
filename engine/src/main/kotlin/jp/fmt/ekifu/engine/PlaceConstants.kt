@@ -31,6 +31,8 @@ object PlaceConstants {
      * （ユーザーと決めたこと：省電力の精度では電車内で数百mずれ、内側の円に入れなかったため）
      */
     const val NEAR_LOCATION_INTERVAL_SEC = 15.0
+    /** 到着したあと（内側の円の中）は省電力の精度でこの間隔にする（ユーザーと決めたこと：到着後は GPS を控える） */
+    const val ARRIVED_LOCATION_INTERVAL_SEC = 60.0
 
     /** 接近・到着で振動させる長さ（待ち・振動・待ち・振動…のミリ秒。仕様外・要調整） */
     val APPROACH_VIBRATION_MS = longArrayOf(0, 180)

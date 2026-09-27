@@ -10,6 +10,8 @@ data class LocationFix(
     val lat: Double,
     val lng: Double,
     val timeMs: Long,
+    /** 位置の精度（誤差の半径 m）。分からなければ null */
+    val accuracyM: Double? = null,
 )
 
 object Geo {

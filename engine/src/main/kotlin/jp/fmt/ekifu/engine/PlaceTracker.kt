@@ -103,15 +103,22 @@ class PlaceTracker(places: List<RegisteredPlace> = emptyList()) {
         // いま追いかけている地点から出たか（到着中は内側の円、接近中は外側の円。どちらも半径の1.2倍を超えたら）
         if (cur != null) {
             val d = distance(cur, fix)
-            val exitRadius = if (state == State.ARRIVED) cur.arriveRadiusM else cur.approachRadiusM
-            if (d > exitRadius * P.EXIT_RADIUS_FACTOR) {
+            // 到着中は省電力の粗い位置で確かめるので、誤差を差し引いても外にいるときだけ離れたとみなす
+            // （誤差が大きくても、外側の円の1.2倍を超えれば離れた）
+            val leaving = if (state == State.ARRIVED) {
+                d - (fix.accuracyM ?: 0.0) > cur.arriveRadiusM * P.EXIT_RADIUS_FACTOR ||
+                    d > cur.approachRadiusM * P.EXIT_RADIUS_FACTOR
+            } else {
+                d > cur.approachRadiusM * P.EXIT_RADIUS_FACTOR
+            }
+            if (leaving) {
                 if (!silent || state == State.ARRIVED) events += PlaceEvent.Leave(cur)
                 leftAtMs[cur.id] = fix.timeMs
                 if (state == State.ARRIVED) leftInnerAtMs[cur.id] = fix.timeMs
                 current = null
                 state = State.NONE
                 silent = false
-            } else if (state != State.ARRIVED && d <= cur.arriveRadiusM) {
+            } else if (state != State.ARRIVED && inInner(cur, fix)) {
                 arrive(cur, events, fix)
                 return events
             }
@@ -120,7 +127,7 @@ class PlaceTracker(places: List<RegisteredPlace> = emptyList()) {
         // 別の地点の内側の円に入ったら、そちらを優先する（到着中の地点は手放さない）
         if (state != State.ARRIVED) {
             val inner = places
-                .filter { it.id != current?.id && distance(it, fix) <= it.arriveRadiusM }
+                .filter { it.id != current?.id && inInner(it, fix) }
                 .minByOrNull { distance(it, fix) }
             if (inner != null) {
                 current?.let { leftAtMs[it.id] = fix.timeMs }
@@ -169,6 +176,13 @@ class PlaceTracker(places: List<RegisteredPlace> = emptyList()) {
         places.any { distance(it, fix) <= P.NEAR_PLACE_DISTANCE_M }
 
     private fun distance(p: RegisteredPlace, fix: LocationFix) = Geo.distanceM(p.lat, p.lng, fix.lat, fix.lng)
+
+    /**
+     * 内側の円に入ったか。駅の屋根の下などでは GPS でも数十mずれるので、
+     * 位置の誤差ぶん（内側の円の半径まで）の余裕を見て到着を取りこぼさないようにする
+     */
+    private fun inInner(p: RegisteredPlace, fix: LocationFix): Boolean =
+        distance(p, fix) - minOf(fix.accuracyM ?: 0.0, p.arriveRadiusM.toDouble()) <= p.arriveRadiusM
 }
 
 /**

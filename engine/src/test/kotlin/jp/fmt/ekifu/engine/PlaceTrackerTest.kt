@@ -70,6 +70,50 @@ class PlaceTrackerTest {
         assertTrue(t.update(at(610.0, 3.0)).single() is PlaceEvent.Leave)
     }
 
+    private fun atWithAccuracy(northM: Double, tMin: Double, accuracyM: Double) = at(northM, tMin).copy(accuracyM = accuracyM)
+
+    @Test
+    fun coarseFixWhileArrivedDoesNotLeaveUntilClearlyOutside() {
+        val t = PlaceTracker(listOf(park))
+        t.update(at(2000.0, 0.0))
+        assertTrue(t.update(at(50.0, 1.0)).single() is PlaceEvent.Arrive)
+        // 到着後は省電力の位置（誤差300m）：300m ずれて見えても離れたことにしない
+        assertTrue(t.update(atWithAccuracy(300.0, 2.0, 300.0)).isEmpty())
+        assertEquals(PlaceTracker.State.ARRIVED, t.state)
+        // 誤差を差し引いても内側の円の1.2倍（120m）より外なら離れる
+        assertTrue(t.update(atWithAccuracy(450.0, 3.0, 300.0)).single() is PlaceEvent.Leave)
+    }
+
+    @Test
+    fun coarseFixFarOutsideTheOuterCircleAlwaysLeaves() {
+        val t = PlaceTracker(listOf(park))
+        t.update(at(2000.0, 0.0))
+        t.update(at(50.0, 1.0))
+        assertTrue(t.update(atWithAccuracy(700.0, 2.0, 2000.0)).single() is PlaceEvent.Leave)
+    }
+
+    @Test
+    fun arrivalAllowsForTheFixError() {
+        val t = PlaceTracker(listOf(park))
+        t.update(at(2000.0, 0.0))
+        t.update(at(400.0, 1.0))
+        // 150m に見えても誤差60m なら内側の円（100m）に入ったとみなす
+        assertTrue(t.update(atWithAccuracy(150.0, 2.0, 60.0)).single() is PlaceEvent.Arrive)
+        // 余裕は内側の円の半径まで（誤差が大きくても 200m より遠ければ到着にしない）
+        val u = PlaceTracker(listOf(park))
+        u.update(at(2000.0, 0.0))
+        u.update(at(400.0, 1.0))
+        assertTrue(u.update(atWithAccuracy(250.0, 2.0, 500.0)).isEmpty())
+    }
+
+    @Test
+    fun locationIsCoarseAgainAfterArrival() {
+        assertTrue(SceneTiming.highAccuracy(nearPlace = true, arrived = false))
+        assertTrue(!SceneTiming.highAccuracy(nearPlace = true, arrived = true))
+        assertEquals(PlaceConstants.NEAR_LOCATION_INTERVAL_SEC, SceneTiming.locationIntervalSec(true, Speed.WALK, arrived = false))
+        assertEquals(PlaceConstants.ARRIVED_LOCATION_INTERVAL_SEC, SceneTiming.locationIntervalSec(true, Speed.VEHICLE, arrived = true))
+    }
+
     @Test
     fun returningInsideWithin30MinutesStaysWithoutArrival() {
         val t = PlaceTracker(listOf(park))
