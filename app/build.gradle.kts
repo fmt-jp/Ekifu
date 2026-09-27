@@ -15,8 +15,8 @@ android {
         applicationId = "jp.fmt.ekifu"
         minSdk = 26
         targetSdk = 35
-        versionCode = 11
-        versionName = "0.6.5-place-bell"
+        versionCode = 12
+        versionName = "0.6.6-place-gps"
     }
 
     signingConfigs {

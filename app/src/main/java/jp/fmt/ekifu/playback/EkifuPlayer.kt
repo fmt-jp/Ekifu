@@ -179,7 +179,10 @@ class EkifuPlayer(context: Context) : SimpleBasePlayer(Looper.getMainLooper()) {
                 val src = SceneSource(
                     appContext,
                     onScene = { scene -> audio.post { it.setScene(scene) } },
-                    onPlaceEvents = { events -> audio.post { applyPlaceEvents(events, it) } },
+                    onPlaceEvents = { events ->
+                        audio.post { applyPlaceEvents(events, it) }
+                        PlaceHaptics.play(appContext, events)
+                    },
                     onUi = { PlaybackBus.updateScene(it) },
                 )
                 scenes = src

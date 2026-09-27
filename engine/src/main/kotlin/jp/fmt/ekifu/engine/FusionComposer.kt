@@ -25,6 +25,8 @@ data class FusionBlock(
     val scene: Scene,
     val place: Place?,
     val cutoffHz: Double,
+    /** 外側の円に入った最初の接近ブロック：頭の2小節は伴奏を止めてベルでテーマを鳴らす */
+    val entry: Boolean = false,
 ) {
     val kimeBars: Set<Int> get() = kimes.keys
     val bpm: Double get() = 60.0 / (stepSec * 4)
@@ -63,8 +65,9 @@ enum class FusionTransition(val label: String) {
  * 曲調「フュージョン」の作曲（12.3〜12.7、12.9）。音符イベントだけを決め、波形は作らない。
  *
  * - 8小節（128ステップ）のブロック単位で組み立てる。入力（場面・地点）は次のブロックの頭で反映する
- * - ブロックの最後の小節は、鳴る直前（[C.COMPOSE_LOOKAHEAD_SEC] 前）まで出さずに持っておく。
- *   それまでにフェーズが変わると決まっていたら、その小節をフェーズのつなぎ（[FusionTransition]）に差し替える
+ * - ブロックの2小節目からは、各小節を鳴る直前（[C.COMPOSE_LOOKAHEAD_SEC] 前）まで出さずに持っておく。
+ *   地点の判定（接近・到着・離れる・滞在）が来ていたら、次の小節をつなぎ（[FusionTransition]）にして、
+ *   その次の小節から新しいブロックを始める。最後の小節の直前に自動でフェーズが変わると分かったときも、最後の小節をつなぎにする
  * - 同じシード・同じ入力なら同じイベント列。copy() で状態をまるごと複製できる（チャンクの作り直し用）
  */
 class FusionComposer(seed: Int, private val config: FusionComposerConfig = FusionComposerConfig()) : ComposerInput {
@@ -98,16 +101,16 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
     /** キメの型・つなぎの揺らし用（ほかの作曲の乱数の並びを変えないよう別にする） */
     private var kimeRng = Mulberry32(seed xor KIME_SEED_SALT)
     private var lastKime: FusionKime? = null
-    /** 作り置きのブロックの最後の小節 */
-    private var tail: Tail? = null
+    /** 作ったブロックのうち、まだ出していない小節（nextBar 小節目から） */
+    private var held: Held? = null
 
-    private class Tail(val block: FusionBlock, val startSec: Double, val events: List<FusionEvent>)
+    private class Held(val block: FusionBlock, val events: List<FusionEvent>, val nextBar: Int)
 
     /** 滞在に入ってからのブロック数（滞在中のベルを1ブロックおきに鳴らすため） */
     private var stayBlocks = 0
 
-    /** 最後の小節をつなぎに差し替えたブロック（画面の表示用。最近のものだけ） */
-    private var transitions = mapOf<Int, FusionTransition>()
+    /** つなぎに差し替えたブロックと小節（画面の表示用。最近のものだけ） */
+    private var transitions = mapOf<Int, Pair<Int, FusionTransition>>()
 
     // ---------------- 入力 ----------------
 
@@ -149,9 +152,9 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
     fun composeUntil(tSec: Double): List<FusionEvent> {
         out.clear()
         while (true) {
-            val t = tail
+            val h = held
             when {
-                t != null && t.startSec < tSec -> resolveTail(t)
+                h != null && barReleaseSec(h.block, h.nextBar) < tSec -> releaseBar(h)
                 nextBlockSec < tSec -> composeBlock()
                 else -> break
             }
@@ -185,13 +188,13 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
         it.pushed = pushed
         it.kimeRng = kimeRng.copy()
         it.lastKime = lastKime
-        it.tail = tail
+        it.held = held
         it.transitions = transitions
         it.stayBlocks = stayBlocks
     }
 
-    /** そのブロックの最後の小節に入れたつなぎ（なければ null） */
-    fun transitionOf(block: FusionBlock): FusionTransition? = transitions[block.index]
+    /** そのブロックに入れたつなぎ（小節とつなぎ。なければ null） */
+    fun transitionOf(block: FusionBlock): Pair<Int, FusionTransition>? = transitions[block.index]
 
     // ---------------- ブロックの設計 ----------------
 
@@ -202,6 +205,7 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
         // 入力を反映する
         pendingScene?.let { scene = it }
         pendingScene = null
+        val prevPlace = place
         pendingPlace?.let { place = it }
         pendingPlace = null
         var leaveTheme: MotifShape? = null
@@ -249,7 +253,8 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
             SunLevel.TWILIGHT -> F.TWILIGHT_CUTOFF_HZ
             SunLevel.DAY -> F.DAY_CUTOFF_HZ
         }
-        val block = FusionBlock(index, start, stepSec, phase, section, chords, heat, kimes, scene, place, cutoff)
+        val entry = phase == Phase.APPROACH && (prev != Phase.APPROACH || prevPlace?.id != place?.id)
+        val block = FusionBlock(index, start, stepSec, phase, section, chords, heat, kimes, scene, place, cutoff, entry)
         blocks = (blocks + block).takeLast(KEEP_BLOCKS)
         nextBlockSec = block.endSec
 
@@ -285,30 +290,63 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
                 bellTheme(block, p, 0.0, F.THEME_NOTE_STEPS, F.BELL_ARRIVE_GAIN, events)
                 bellTheme(block, p, 2.0 * F.STEPS_PER_BAR, F.ARRIVAL_THEME_SLOW_STEPS, F.BELL_ARRIVE_SLOW_GAIN, events)
             }
+            // 外側の円に入った最初のブロックは、伴奏を止めた2小節でベルを大きく2回
+            entry && p != null -> {
+                bellTheme(block, p, 0.0, F.THEME_NOTE_STEPS, F.BELL_ENTRY_GAIN, events)
+                bellTheme(block, p, F.STEPS_PER_BAR.toDouble(), F.THEME_NOTE_STEPS, F.BELL_ENTRY_ECHO_GAIN, events)
+            }
             phase == Phase.APPROACH && p != null -> bellTheme(block, p, 0.0, F.THEME_NOTE_STEPS, F.BELL_APPROACH_GAIN, events)
             phase == Phase.STAY && p != null && stayBlocks % F.BELL_STAY_EVERY_BLOCKS == 0 ->
                 bellTheme(block, p, 0.0, F.THEME_NOTE_STEPS, F.BELL_STAY_GAIN, events)
             leftPlace != null -> bellTheme(block, leftPlace, 0.0, F.THEME_NOTE_STEPS, F.BELL_LEAVE_GAIN, events)
         }
         val all = Humanizer(Mulberry32(rng.nextInt(Int.MAX_VALUE))).apply(events, block)
-        // 最後の小節は持っておく（揺らしで少し早まった音も含めるよう、半ステップ手前で分ける）
-        val tailStart = block.startSec + (F.STEPS_PER_BLOCK - F.STEPS_PER_BAR - 0.5) * stepSec
-        all.filter { it.timeSec < tailStart }.forEach { out += it }
-        tail = Tail(block, tailStart, all.filter { it.timeSec >= tailStart })
+        // 1小節目だけすぐ出し、2小節目からは鳴る直前まで持っておく
+        val bar1 = barReleaseSec(block, 1)
+        all.filter { it.timeSec < bar1 }.forEach { out += it }
+        held = Held(block, all.filter { it.timeSec >= bar1 }, 1)
     }
 
-    /** 最後の小節を出す。次のブロックでフェーズが変わるなら、つなぎに差し替える */
-    private fun resolveTail(t: Tail) {
-        tail = null
-        val kind = transitionFor(t.block.phase, peekNextPhase(t.block.endSec))
-        if (kind == null) {
-            out += t.events
+    /**
+     * bar 小節目を出してよい時刻。揺らしで少し早まった音も含めるよう、半ステップ手前にする
+     * （作曲はこれより [C.COMPOSE_LOOKAHEAD_SEC] 前に進むので、入力はそこまでに来ていれば間に合う）
+     */
+    private fun barReleaseSec(block: FusionBlock, bar: Int) =
+        block.startSec + (bar * F.STEPS_PER_BAR - 0.5) * block.stepSec
+
+    /** 持っている小節を1つ出す。地点の判定が来ていたらつなぎにして次の小節から新しいブロック */
+    private fun releaseBar(h: Held) {
+        val k = h.nextBar
+        val last = k == F.BARS_PER_BLOCK - 1
+        val pend = pendingPhase
+        if (pend != null && !last) {
+            held = null
+            val kind = transitionFor(h.block.phase, pend)
+            nextBlockSec = if (kind != null) {
+                writeTransition(h.block, k, kind)
+                h.block.startSec + (k + 1) * F.STEPS_PER_BAR * h.block.stepSec
+            } else {
+                h.block.startSec + k * F.STEPS_PER_BAR * h.block.stepSec
+            }
             return
         }
-        transitions = (transitions + (t.block.index to kind)).filterKeys { it > t.block.index - KEEP_BLOCKS }
+        if (last) {
+            held = null
+            val kind = transitionFor(h.block.phase, peekNextPhase(h.block.endSec))
+            if (kind != null) writeTransition(h.block, k, kind) else out += h.events.filter { it.timeSec >= barReleaseSec(h.block, k) }
+            return
+        }
+        val from = barReleaseSec(h.block, k)
+        val to = barReleaseSec(h.block, k + 1)
+        out += h.events.filter { it.timeSec >= from && it.timeSec < to }
+        held = Held(h.block, h.events, k + 1)
+    }
+
+    private fun writeTransition(block: FusionBlock, bar: Int, kind: FusionTransition) {
+        transitions = (transitions + (block.index to (bar to kind))).filterKeys { it > block.index - KEEP_BLOCKS }
         val events = ArrayList<FusionEvent>()
-        Transition(t.block, kind, nextFirstChord(), events).write()
-        out += Humanizer(Mulberry32(kimeRng.nextInt(Int.MAX_VALUE))).apply(events, t.block)
+        Transition(block, bar, kind, nextFirstChord(), events).write()
+        out += Humanizer(Mulberry32(kimeRng.nextInt(Int.MAX_VALUE))).apply(events, block)
     }
 
     private fun transitionFor(from: Phase, to: Phase): FusionTransition? = when {
@@ -402,15 +440,16 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
 
     // ---------------- フェーズのつなぎ（仕様外・要調整） ----------------
 
-    /** 最後の小節をつなぎに差し替える。伴奏とリードを書く */
+    /** bar 小節目をつなぎに差し替える。伴奏とリードを書く */
     private inner class Transition(
         val block: FusionBlock,
+        bar: Int,
         val kind: FusionTransition,
         val nx: FusionChord,
         val out: MutableList<FusionEvent>,
     ) {
-        val base = (F.STEPS_PER_BLOCK - F.STEPS_PER_BAR).toDouble()
-        val ch = block.chords[F.BARS_PER_BLOCK - 1]
+        val base = (bar * F.STEPS_PER_BAR).toDouble()
+        val ch = block.chords[bar]
         fun t(step: Double) = block.startSec + (base + step) * block.stepSec
         fun t(step: Int) = t(step.toDouble())
 
@@ -526,6 +565,10 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
                 val nx = if (b + 1 < F.BARS_PER_BLOCK) block.chords[b + 1] else nextBlockFirst
                 val o = b * F.STEPS_PER_BAR.toDouble()
                 when {
+                    block.entry && b < F.ENTRY_BREAK_BARS -> {
+                        entryBreak(b, o, ch)
+                        pushed = false
+                    }
                     block.phase == Phase.ARRIVE && b > ARRIVAL_KIME_BAR -> {
                         if (b == ARRIVAL_KIME_BAR + 1) landOnTonic(o)
                         pushed = false
@@ -537,6 +580,17 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
                     else -> groove(b, o, ch, nx)
                 }
             }
+        }
+
+        /** 外側の円に入った最初の2小節：ドラムを止めて和音とベースだけを伸ばし、最後の1拍のスネアでバンドが戻る */
+        private fun entryBreak(b: Int, o: Double, ch: FusionChord) {
+            keys(t(o), (F.STEPS_PER_BAR - 1).toDouble(), ch, 0.6)
+            out += PolyNote(t(o), PolyPart.BASS, ch.bassRoot, (F.STEPS_PER_BAR - 1) * block.stepSec, 0.8)
+            if (b == 0) {
+                out += DrumHit(t(o), DrumKind.KICK, 1.0)
+                out += DrumHit(t(o), DrumKind.CRASH, 0.9)
+            }
+            if (b == F.ENTRY_BREAK_BARS - 1) breakPickup(block, o, out)
         }
 
         /** トニック（DM9）に着地して2小節伸ばす */
@@ -670,18 +724,20 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
             val firstKime = block.kimeBars.minOrNull()
             val endLead = (firstKime ?: F.BARS_PER_BLOCK) * F.STEPS_PER_BAR.toDouble()
             val notes = ArrayList<LeadStep>()
-            var pos = 0.0
+            // 外側の円に入った最初のブロックは、ベルだけの2小節のあとからリードが入る
+            val startPos = if (block.entry) (F.ENTRY_BREAK_BARS * F.STEPS_PER_BAR).toDouble() else 0.0
+            var pos = startPos
             openingTheme?.let { p ->
-                val theme = themeNotes(p.themeSeed, at(0.0))
+                val theme = themeNotes(p.themeSeed, at(startPos))
                 theme.forEachIndexed { i, m ->
                     val last = i == theme.size - 1
-                    val step = (i * F.THEME_NOTE_STEPS).toDouble()
+                    val step = startPos + i * F.THEME_NOTE_STEPS
                     val len = if (last) F.THEME_LAST_NOTE_STEPS.toDouble() else F.THEME_NOTE_STEPS * 0.95
                     notes += LeadStep(step, len, m, if (i == 0) 0.9 else 0.8, scoop = if (i == 0) 1 else 0, vibrato = last)
                 }
                 cur = theme.last()
                 // テーマのあと、ひと呼吸おいてアドリブへ
-                pos = ((theme.size - 1) * F.THEME_NOTE_STEPS + F.THEME_LAST_NOTE_STEPS + F.THEME_BREATH_STEPS).toDouble()
+                pos = startPos + (theme.size - 1) * F.THEME_NOTE_STEPS + F.THEME_LAST_NOTE_STEPS + F.THEME_BREATH_STEPS
             }
             while (pos < endLead - 1) {
                 val type = if (endLead - pos < 4) "breath" else pick()

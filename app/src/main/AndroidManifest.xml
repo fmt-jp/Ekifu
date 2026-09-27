@@ -9,6 +9,8 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- 登録地点の接近・到着を振動でも知らせる -->
+    <uses-permission android:name="android.permission.VIBRATE" />
     <!-- 地点登録の地図の画像（タイル）を取るときだけ使う。再生中は通信しない -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />

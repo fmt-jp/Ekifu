@@ -46,6 +46,16 @@ class FusionTransitionTest {
         }
     }
 
+    /** ブロック next の直前の1小節（つなぎが入る小節）の、ステップ from..to のイベント */
+    private fun barBefore(r: Run, next: FusionBlock, from: Int = 0, to: Int = F.STEPS_PER_BAR - 1): List<FusionEvent> {
+        val prev = r.blocks.first { it.index == next.index - 1 }
+        val barStart = next.startSec - F.STEPS_PER_BAR * prev.stepSec
+        return r.events.filter {
+            val step = ((it.timeSec - barStart) / prev.stepSec).roundToInt()
+            it.timeSec > barStart - prev.stepSec / 2 && it.timeSec < next.startSec - prev.stepSec / 2 && step in from..to
+        }
+    }
+
     private fun snares(events: List<FusionEvent>) = events.filterIsInstance<DrumHit>().filter { it.kind == DrumKind.SNARE }
 
     /** 16分のスネアをだんだん強く打っている（つなぎのロール） */
@@ -96,18 +106,33 @@ class FusionTransitionTest {
     }
 
     @Test
-    fun approachIsBuiltUpInTheLastBarBeforeIt() {
+    fun approachStartsTwoBarsLaterWithBuildUpThenBellBreak() {
         val c = newComposer()
         val probe = run(c.copy(), 3 * 14.6)
         val inputAt = probe.blocks[2].startSec + 3.0
         val r = run(c, 6 * 14.6, listOf(inputAt to { it.approach(park) }))
-        val before = r.blocks.last { it.startSec < inputAt }
-        assertEquals(Phase.APPROACH, blockStartingAfter(r, inputAt).phase)
-        assertTrue(hasSnareRoll(r, before, F.BUILD_FULL_FROM), "盛り上げのスネアがない")
+        val approach = r.blocks.first { it.phase == Phase.APPROACH }
+        val prev = r.blocks.first { it.index == approach.index - 1 }
+        val barSec = F.STEPS_PER_BAR * prev.stepSec
+        // ブロックの終わりを待たず、次の小節をつなぎにして、その次の小節から接近
+        assertTrue(approach.startSec - inputAt <= 2 * barSec + C.COMPOSE_LOOKAHEAD_SEC, "接近が遅い: ${approach.startSec - inputAt} 秒")
+        assertTrue(approach.startSec < prev.endSec - 1.0, "ブロックの終わりまで待っている")
+        assertTrue(snares(barBefore(r, approach, F.BUILD_FULL_FROM)).size >= F.STEPS_PER_BAR - F.BUILD_FULL_FROM, "盛り上げのスネアがない")
         // リードが16分で駆け上がる
-        val lead = lastBar(r, before, F.BUILD_LEAD_FROM).filterIsInstance<LeadNote>().sortedBy { it.timeSec }
+        val lead = barBefore(r, approach, F.BUILD_LEAD_FROM).filterIsInstance<LeadNote>().sortedBy { it.timeSec }
         assertEquals(F.STEPS_PER_BAR - F.BUILD_LEAD_FROM, lead.size)
         lead.zipWithNext().forEach { (a, b) -> assertTrue(b.midi >= a.midi, "駆け上がっていない") }
+        // 入った最初の2小節：ドラムは頭のキック・クラッシュと最後の1拍のスネアだけ、リードは休み、ベルが大きく2回
+        assertTrue(approach.entry)
+        val breakEnd = approach.startSec + (F.ENTRY_BREAK_BARS * F.STEPS_PER_BAR - 0.5) * approach.stepSec
+        val inBreak = r.events.filter { it.timeSec >= approach.startSec - 0.01 && it.timeSec < breakEnd }
+        val drums = inBreak.filterIsInstance<DrumHit>()
+        assertEquals(setOf(DrumKind.KICK, DrumKind.CRASH, DrumKind.SNARE), drums.map { it.kind }.toSet())
+        assertEquals(2 + (F.STEPS_PER_BAR - F.BREAK_PICKUP_FROM), drums.size, "ブレイク中にドラムが鳴っている: $drums")
+        assertTrue(inBreak.none { it is LeadNote }, "ブレイク中にリードが鳴っている")
+        val bells = inBreak.filterIsInstance<BellNote>()
+        assertEquals(2 * Motifs.theme(park.themeSeed).size, bells.size)
+        assertEquals(F.BELL_ENTRY_GAIN, bells.first().gain, 1e-9)
         // 接近しなければ、同じブロックの最後はふだんどおり
         assertTrue(!hasSnareRoll(probe, probe.blocks[2], F.BUILD_HALF_FROM))
     }
@@ -119,10 +144,10 @@ class FusionTransitionTest {
         val arrive = r.blocks.first { it.phase == Phase.ARRIVE }
         val before = r.blocks.first { it.index == arrive.index - 1 }
         assertEquals(Phase.APPROACH, before.phase)
-        val middle = lastBar(r, before, 1, F.BREAK_PICKUP_FROM - 1).filter { it !is LeadNote && it !is FusionControl }
+        val middle = barBefore(r, arrive, 1, F.BREAK_PICKUP_FROM - 1).filter { it !is LeadNote && it !is FusionControl && it !is BellNote }
         assertTrue(middle.isEmpty(), "ブレイク中に伴奏が鳴っている: $middle")
-        assertEquals(4, snares(lastBar(r, before, F.BREAK_PICKUP_FROM)).size)
-        val high = lastBar(r, before).filterIsInstance<LeadNote>().single()
+        assertEquals(4, snares(barBefore(r, arrive, F.BREAK_PICKUP_FROM)).size)
+        val high = barBefore(r, arrive).filterIsInstance<LeadNote>().single()
         assertTrue(high.midi >= F.HIGH_TONE_MIN, "ハイトーンで残っていない: ${high.midi}")
     }
 
@@ -146,14 +171,14 @@ class FusionTransitionTest {
         val stay = r.blocks.first { it.phase == Phase.STAY }
         val beforeStay = r.blocks.first { it.index == stay.index - 1 }
         // 落ち着き：スネアなし、ハイハットがだんだん弱く
-        assertTrue(snares(lastBar(r, beforeStay)).isEmpty())
-        val hats = lastBar(r, beforeStay).filterIsInstance<DrumHit>().filter { it.kind == DrumKind.HAT }.sortedBy { it.timeSec }
+        assertTrue(snares(barBefore(r, stay)).isEmpty())
+        val hats = barBefore(r, stay).filterIsInstance<DrumHit>().filter { it.kind == DrumKind.HAT }.sortedBy { it.timeSec }
         assertTrue(hats.size >= 6 && hats.first().velocity > hats.last().velocity)
 
         val journey = r.blocks.first { it.index > stay.index && it.phase == Phase.JOURNEY }
         val beforeJourney = r.blocks.first { it.index == journey.index - 1 }
         assertEquals(Phase.STAY, beforeJourney.phase)
-        assertTrue(hasSnareRoll(r, beforeJourney, F.BUILD_HALF_FROM), "滞在から道中への呼び込みがない")
+        assertTrue(snares(barBefore(r, journey, F.BUILD_HALF_FROM)).size >= F.STEPS_PER_BAR - F.BUILD_HALF_FROM, "滞在から道中への呼び込みがない")
     }
 
     @Test

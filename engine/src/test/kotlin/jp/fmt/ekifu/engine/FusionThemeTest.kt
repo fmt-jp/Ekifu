@@ -60,9 +60,12 @@ class FusionThemeTest {
         val (events, blocks) = run(8, mapOf(2 to { it.approach(park) }))
         val approach = blocks.filter { it.phase == Phase.APPROACH }
         assertTrue(approach.size >= 3)
+        assertTrue(approach.first().entry && approach.drop(1).none { it.entry })
         for (b in approach) {
             val n = Motifs.theme(park.themeSeed).size
-            val notes = leadIn(events, b, 0.0, ((n - 1) * F.THEME_NOTE_STEPS + 1).toDouble())
+            // 入った最初のブロックはベルだけの2小節のあとからリードが吹く
+            val from = if (b.entry) (F.ENTRY_BREAK_BARS * F.STEPS_PER_BAR).toDouble() else 0.0
+            val notes = leadIn(events, b, from, from + (n - 1) * F.THEME_NOTE_STEPS + 1)
             assertTheme(park, notes, b, F.THEME_NOTE_STEPS, "接近 ${b.index}")
         }
     }
@@ -93,15 +96,18 @@ class FusionThemeTest {
         assertTrue(!same, "離れたあとも毎ブロックテーマを吹いている")
     }
 
-    private fun bellsIn(events: List<FusionEvent>, b: FusionBlock) =
-        events.filterIsInstance<BellNote>().filter { it.timeSec >= b.startSec - 0.01 && it.timeSec < b.endSec - 0.01 }.sortedBy { it.timeSec }
+    /** ブロック b のベル。次の小節で区切られたブロックは、次のブロックの頭までを見る */
+    private fun bellsIn(events: List<FusionEvent>, b: FusionBlock, blocks: List<FusionBlock>): List<BellNote> {
+        val end = blocks.firstOrNull { it.index == b.index + 1 }?.startSec ?: b.endSec
+        return events.filterIsInstance<BellNote>().filter { it.timeSec >= b.startSec - 0.01 && it.timeSec < end - 0.01 }.sortedBy { it.timeSec }
+    }
 
     @Test
     fun bellRingsTheThemeLikeThePreview() {
         val (events, blocks) = run(14, mapOf(2 to { it.approach(park) }, 4 to { it.arrive(park) }, 10 to { it.leave() }))
         val theme = Motifs.theme(park.themeSeed)
         fun check(b: FusionBlock, gain: Double, what: String, passes: Int = 1) {
-            val bells = bellsIn(events, b)
+            val bells = bellsIn(events, b, blocks)
             assertEquals(theme.size * passes, bells.size, "$what：ベルの数")
             bells.chunked(theme.size).forEach { pass ->
                 // 試聴と同じ音の並び（調だけ移す）
@@ -110,7 +116,9 @@ class FusionThemeTest {
             }
             assertEquals(gain, bells.first().gain, 1e-9, "$what：ベルの音量")
         }
-        blocks.filter { it.phase == Phase.APPROACH }.forEach { check(it, F.BELL_APPROACH_GAIN, "接近 ${it.index}") }
+        blocks.filter { it.phase == Phase.APPROACH }.forEach {
+            if (it.entry) check(it, F.BELL_ENTRY_GAIN, "接近の入り ${it.index}", passes = 2) else check(it, F.BELL_APPROACH_GAIN, "接近 ${it.index}")
+        }
         val arrive = blocks.first { it.phase == Phase.ARRIVE }
         check(arrive, F.BELL_ARRIVE_GAIN, "到着", passes = 2)
         // 滞在：到着の直後のブロックは鳴らさず、そこから1ブロックおき
@@ -118,13 +126,13 @@ class FusionThemeTest {
         assertTrue(stays.size >= 4)
         stays.forEachIndexed { i, b ->
             if ((i + 1) % F.BELL_STAY_EVERY_BLOCKS == 0) check(b, F.BELL_STAY_GAIN, "滞在 ${b.index}")
-            else assertTrue(bellsIn(events, b).isEmpty(), "滞在 ${b.index} で鳴った")
+            else assertTrue(bellsIn(events, b, blocks).isEmpty(), "滞在 ${b.index} で鳴った")
         }
         val leave = blocks.first { it.index > arrive.index && it.phase == Phase.JOURNEY }
         check(leave, F.BELL_LEAVE_GAIN, "離れる")
-        assertTrue(bellsIn(events, blocks.first { it.index == leave.index + 1 }).isEmpty(), "離れたあとも鳴り続けた")
+        assertTrue(bellsIn(events, blocks.first { it.index == leave.index + 1 }, blocks).isEmpty(), "離れたあとも鳴り続けた")
         // 道中だけのブロックでは鳴らさない
-        assertTrue(blocks.filter { it.index < 2 }.all { bellsIn(events, it).isEmpty() })
+        assertTrue(blocks.filter { it.index < 2 }.all { bellsIn(events, it, blocks).isEmpty() })
     }
 
     @Test

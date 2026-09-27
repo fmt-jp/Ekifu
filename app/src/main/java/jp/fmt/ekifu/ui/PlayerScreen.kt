@@ -314,7 +314,12 @@ private fun DebugCard(ui: PlaybackBus.Ui, stream: StreamStatus, status: EngineSt
                         PlaceTracker.State.ARRIVED -> "${sc.trackedName}に到着"
                     },
                 )
-                DebugRow("位置の取得間隔", sc.locationIntervalSec?.let { "${it / 60}分" } ?: "—")
+                DebugRow(
+                    "位置の取得間隔",
+                    sc.locationIntervalSec?.let {
+                        (if (it < 60) "${it}秒" else "${it / 60}分") + if (sc.highAccuracy) "（GPS）" else ""
+                    } ?: "—",
+                )
             }
             // 接近・到着・離れるの演出が鳴り始めた再生時刻
             DebugRow("演出の記録", if (ui.placeLog.isEmpty()) "まだなし" else "")

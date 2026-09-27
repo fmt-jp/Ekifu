@@ -240,6 +240,10 @@ object FusionConstants {
     val BELL_STAY_GAIN = db(-18.0)
     /** 滞在中は、この数のブロックごとにベルでテーマを鳴らす（到着の直後のブロックは鳴らさない） */
     const val BELL_STAY_EVERY_BLOCKS = 2
+    /** 外側の円に入った最初のブロック：伴奏を止める小節数と、その上のベル（1回目・2回目） */
+    const val ENTRY_BREAK_BARS = 2
+    val BELL_ENTRY_GAIN = db(-6.0)
+    val BELL_ENTRY_ECHO_GAIN = db(-10.0)
     const val BELL_PAN = -0.1
     val BELL_SEND = Sends(reverb = 0.35, delay = 0.35)
 

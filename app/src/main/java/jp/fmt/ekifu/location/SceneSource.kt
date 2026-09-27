@@ -60,6 +60,8 @@ data class SceneUi(
     val trackedSilent: Boolean = false,
     /** 位置の取得間隔（秒）。登録地点の近くでは短い */
     val locationIntervalSec: Int? = null,
+    /** 高精度（GPS）で取っているか */
+    val highAccuracy: Boolean = false,
 )
 
 /**
@@ -85,6 +87,7 @@ class SceneSource(
     private val tracker = PlaceTracker()
     private var placesJob: Job? = null
     private var intervalMs = 0L
+    private var highAccuracy = false
     private val sessionId = System.currentTimeMillis()
     private var pseudoIndex = 0
     private var latest: LocationFix? = null
@@ -127,10 +130,12 @@ class SceneSource(
         onUi(ui)
     }
 
-    /** 登録地点の1.5km以内と乗り物のあいだは1分ごと、それ以外は5分ごと */
+    /** 登録地点の1.5km以内は GPS で15秒ごと、乗り物のあいだは1分ごと、それ以外は5分ごと */
     private fun adjustInterval(fix: LocationFix) {
-        val wanted = (SceneTiming.locationIntervalSec(tracker.isNear(fix), currentSpeed()) * 1000).toLong()
-        if (wanted != intervalMs && ticker != null) requestUpdates(wanted)
+        val near = tracker.isNear(fix)
+        val wanted = (SceneTiming.locationIntervalSec(near, currentSpeed()) * 1000).toLong()
+        val high = SceneTiming.highAccuracy(near)
+        if ((wanted != intervalMs || high != highAccuracy) && ticker != null) requestUpdates(wanted, high)
     }
 
     private fun currentSpeed(): Speed? = ui.decision?.scene?.speed
@@ -183,6 +188,7 @@ class SceneSource(
         ticker = null
         fused.removeLocationUpdates(callback)
         this.intervalMs = 0
+        highAccuracy = false
         ui = ui.copy(locationIntervalSec = null)
         publish(nextSceneAtMs = null)
     }
@@ -223,10 +229,12 @@ class SceneSource(
     }
 
     @SuppressLint("MissingPermission") // hasPermission を確かめてから呼ぶ
-    private fun requestUpdates(intervalMs: Long) {
+    private fun requestUpdates(intervalMs: Long, highAccuracy: Boolean = false) {
         this.intervalMs = intervalMs
-        ui = ui.copy(locationIntervalSec = (intervalMs / 1000).toInt())
-        val request = LocationRequest.Builder(Priority.PRIORITY_BALANCED_POWER_ACCURACY, intervalMs).build()
+        this.highAccuracy = highAccuracy
+        ui = ui.copy(locationIntervalSec = (intervalMs / 1000).toInt(), highAccuracy = highAccuracy)
+        val priority = if (highAccuracy) Priority.PRIORITY_HIGH_ACCURACY else Priority.PRIORITY_BALANCED_POWER_ACCURACY
+        val request = LocationRequest.Builder(priority, intervalMs).build()
         try {
             // 同じ callback で頼み直すと、間隔だけが置き換わる
             fused.requestLocationUpdates(request, callback, Looper.getMainLooper())

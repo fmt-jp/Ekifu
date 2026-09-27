@@ -93,7 +93,8 @@ class FusionEngine private constructor(
     /** デバッグ表示：いまの小節がキメ・つなぎならその型 */
     private fun barLabel(block: FusionBlock, t: Double): String {
         val bar = block.barAt(t)
-        if (bar == F.BARS_PER_BLOCK - 1) composer.transitionOf(block)?.let { return "（つなぎ：${it.label}）" }
+        composer.transitionOf(block)?.let { (b, kind) -> if (b == bar) return "（つなぎ：${kind.label}）" }
+        if (block.entry && bar < F.ENTRY_BREAK_BARS) return "（ブレイク：地点のテーマ）"
         return block.kimes[bar]?.let { "（キメ：${it.label}）" } ?: ""
     }
 

@@ -98,6 +98,9 @@ object SceneTiming {
         else -> C.SCENE_INTERVAL_SEC
     }
 
+    /** 高精度（GPS）で位置を取るか：登録地点の近く（1.5km以内）だけ */
+    fun highAccuracy(nearPlace: Boolean): Boolean = nearPlace
+
     /** 新しく決めた場面に切り替えるか。current はいま鳴っている場面、sinceSwitchSec はその場面にしてからの時間 */
     fun shouldSwitch(current: Scene?, next: Scene, sinceSwitchSec: Double): Boolean =
         current == null ||
