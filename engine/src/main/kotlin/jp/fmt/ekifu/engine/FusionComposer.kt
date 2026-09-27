@@ -201,7 +201,9 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
         pendingPlace?.let { place = it }
         pendingPlace = null
         var leaveTheme: MotifShape? = null
+        var leftPlace: Place? = null
         if (pendingLeave) {
+            leftPlace = place
             leaveTheme = place?.let { FusionMotifs.theme(it.themeSeed) }
             place = null
             pendingLeave = false
@@ -266,7 +268,9 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
                     leaveTheme != null -> leaveTheme
                     else -> FusionMotifs.place(scene.gridId)
                 }
-                Lead(block, firstMotif, events).write()
+                // ブロックの頭で地点のテーマをそのまま吹く：接近中は毎ブロック、離れた直後は一度だけ
+                val opening = if (phase == Phase.APPROACH) place else leftPlace
+                Lead(block, firstMotif, events, opening).write()
             }
         }
         val all = Humanizer(Mulberry32(rng.nextInt(Int.MAX_VALUE))).apply(events, block)
@@ -632,7 +636,13 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
 
     private class Result(val notes: List<LeadStep>, val end: Double)
 
-    private inner class Lead(val block: FusionBlock, firstMotif: MotifShape, val events: MutableList<FusionEvent>) {
+    private inner class Lead(
+        val block: FusionBlock,
+        firstMotif: MotifShape,
+        val events: MutableList<FusionEvent>,
+        /** ブロックの頭でテーマを吹く地点 */
+        val openingTheme: Place? = null,
+    ) {
         val h = block.heat
         private var pendingMotif: MotifShape? = firstMotif
 
@@ -644,6 +654,18 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
             val endLead = (firstKime ?: F.BARS_PER_BLOCK) * F.STEPS_PER_BAR.toDouble()
             val notes = ArrayList<LeadStep>()
             var pos = 0.0
+            openingTheme?.let { p ->
+                val theme = themeNotes(p.themeSeed, at(0.0))
+                theme.forEachIndexed { i, m ->
+                    val last = i == theme.size - 1
+                    val step = (i * F.THEME_NOTE_STEPS).toDouble()
+                    val len = if (last) F.THEME_LAST_NOTE_STEPS.toDouble() else F.THEME_NOTE_STEPS * 0.95
+                    notes += LeadStep(step, len, m, if (i == 0) 0.9 else 0.8, scoop = if (i == 0) 1 else 0, vibrato = last)
+                }
+                cur = theme.last()
+                // テーマのあと、ひと呼吸おいてアドリブへ
+                pos = ((theme.size - 1) * F.THEME_NOTE_STEPS + F.THEME_LAST_NOTE_STEPS + F.THEME_BREATH_STEPS).toDouble()
+            }
             while (pos < endLead - 1) {
                 val type = if (endLead - pos < 4) "breath" else pick()
                 val res = when (type) {
@@ -828,22 +850,23 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
         }
     }
 
-    /** 到着：テーマをロングトーンで吹き（1〜5小節目）、キメのあと DM9 の上で主音を伸ばす */
+    /** 到着：テーマをそのまま吹き（1・2小節目）、ゆっくり吹き直して（3〜5小節目）、キメのあと DM9 の上で主音を伸ばす */
     private fun arrivalLead(block: FusionBlock, events: MutableList<FusionEvent>) {
-        val p = place
-        val contour = if (p != null) FusionMotifs.themeContour(p.themeSeed) else listOf(0, 1, 2)
+        val theme = themeNotes(place?.themeSeed ?: 0, block.chords[0])
         val notes = ArrayList<LeadStep>()
-        val startChord = block.chords[0]
-        val start = land(cur, startChord, 0)
-        contour.dropLast(1).forEachIndexed { i, c ->
-            val step = i * F.STEPS_PER_BAR.toDouble()
-            notes += LeadStep(step, 12.0, stepScale(start, block.chords[i], c), 0.85, scoop = if (i == 0) 2 else 0, vibrato = true)
+        val slowFrom = 2.0 * F.STEPS_PER_BAR
+        val kimeFrom = ARRIVAL_KIME_BAR * F.STEPS_PER_BAR.toDouble()
+        theme.forEachIndexed { i, m ->
+            val step = (i * F.THEME_NOTE_STEPS).toDouble()
+            val len = if (i == theme.size - 1) slowFrom - step else F.THEME_NOTE_STEPS * 0.95
+            notes += LeadStep(step, len, m, if (i == 0) 0.9 else 0.8, scoop = if (i == 0) 2 else 0, vibrato = i == theme.size - 1)
         }
-        // テーマの最後は主音（D）で終わる
-        val lastStep = (contour.size - 1) * F.STEPS_PER_BAR.toDouble()
-        val tonic = nearestPc(notes.lastOrNull()?.midi ?: start, setOf(F.TONIC_ROOT_PC), 0)
-        notes += LeadStep(lastStep, 12.0, tonic, 0.9, vibrato = true)
-        cur = tonic
+        theme.forEachIndexed { i, m ->
+            val step = slowFrom + i * F.ARRIVAL_THEME_SLOW_STEPS
+            val len = if (i == theme.size - 1) kimeFrom - 2 - step else F.ARRIVAL_THEME_SLOW_STEPS * 0.95
+            notes += LeadStep(step, len, m, 0.85, vibrato = true)
+        }
+        cur = theme.last()
         // キメ（6小節目）
         val kimeBase = ARRIVAL_KIME_BAR * F.STEPS_PER_BAR.toDouble()
         var m = maxOf(F.LEAD_MIN_MIDI, minOf(cur, F.KIME_START_CAP) - F.KIME_START_DROP)
@@ -877,6 +900,19 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
     }
 
     // ---------------- 音階の道具 ----------------
+
+    /**
+     * 地点のテーマ（試聴と同じ音の並び）を、ch の調に移してリードの音域に収める。
+     * テーマは癒しの調（F のペンタトニック）で作られているので、F → ch の調へ近い向きに移す
+     */
+    private fun themeNotes(themeSeed: Int, ch: FusionChord): List<Int> {
+        var shift = ((ch.keyPc - C.TONIC_PITCH_CLASS) % 12 + 12) % 12
+        if (shift > 6) shift -= 12
+        var notes = Motifs.theme(themeSeed).map { it + shift }
+        while (notes.max() > F.LEAD_MAX_MIDI) notes = notes.map { it - 12 }
+        while (notes.min() < F.LEAD_MIN_MIDI) notes = notes.map { it + 12 }
+        return notes
+    }
 
     private fun scaleOf(ch: FusionChord): List<Int> =
         SCALE_CACHE.getOrPut(ch.keyPc) { (F.LEAD_MIN_MIDI..F.LEAD_MAX_MIDI).filter { (it % 12) in ch.scalePcs } }

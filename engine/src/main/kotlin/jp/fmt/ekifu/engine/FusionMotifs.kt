@@ -35,9 +35,6 @@ object FusionMotifs {
     /** 地点のテーマ（癒しと同じシード）の音程の動きを輪郭に、リズム型もテーマのシードから選ぶ */
     fun theme(themeSeed: Int): MotifShape = fromNotes(Motifs.theme(themeSeed), themeSeed)
 
-    /** 地点のテーマの輪郭（度数）。到着で吹くときに使う */
-    fun themeContour(themeSeed: Int): List<Int> = contourOf(Motifs.theme(themeSeed))
-
     private fun fromNotes(notes: List<Int>, seed: Int): MotifShape {
         val contour = contourOf(notes)
         val rh = RHYTHMS[Mulberry32(seed).nextInt(RHYTHMS.size)]

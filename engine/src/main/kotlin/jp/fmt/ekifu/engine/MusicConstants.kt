@@ -73,6 +73,13 @@ object MusicConstants {
     const val SCENE_INTERVAL_SEC = 5 * 60.0
     /** これより古い位置は「取れなかった」とみなす（仕様外・要調整） */
     const val LOCATION_MAX_AGE_SEC = 6 * 60.0
+    /**
+     * 乗り物のあいだは位置をこの間隔で取り、マスか速さが変わっていたら場面を切り替える
+     * （ユーザーと決めたこと。電車だと5分でマスをいくつも飛ばすため）
+     */
+    const val VEHICLE_SCENE_INTERVAL_SEC = 60.0
+    /** 確かめる時刻のずれの許容（5分たったかを見るとき） */
+    const val SCENE_TIMING_TOLERANCE_SEC = 5.0
     /** マスの大きさ（ジオハッシュの桁数。6桁 ≒ 1.2km × 0.6km） */
     const val GEOHASH_PRECISION = 6
     /** 静止とみなす速さ（km/h 未満） */

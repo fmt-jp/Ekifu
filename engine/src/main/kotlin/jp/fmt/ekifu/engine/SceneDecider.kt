@@ -79,3 +79,29 @@ class SceneDecider {
         }
     }
 }
+
+/**
+ * 場面の区切りの間隔（5章＋ユーザーと決めたこと）。
+ * ふだんは5分ごとに場面を決める。乗り物のあいだは1分ごとに位置を確かめ、
+ * マスか速さが変わっていたときだけ場面を切り替える（変わらなければ5分たつまで今の場面を続ける）
+ */
+object SceneTiming {
+
+    /** 次に場面を確かめるまでの時間 */
+    fun checkIntervalSec(speed: Speed?): Double =
+        if (speed == Speed.VEHICLE) C.VEHICLE_SCENE_INTERVAL_SEC else C.SCENE_INTERVAL_SEC
+
+    /** 位置の取得間隔：登録地点の近く（1.5km以内）か乗り物のあいだは短く */
+    fun locationIntervalSec(nearPlace: Boolean, speed: Speed?): Double = when {
+        nearPlace -> PlaceConstants.NEAR_LOCATION_INTERVAL_SEC
+        speed == Speed.VEHICLE -> C.VEHICLE_SCENE_INTERVAL_SEC
+        else -> C.SCENE_INTERVAL_SEC
+    }
+
+    /** 新しく決めた場面に切り替えるか。current はいま鳴っている場面、sinceSwitchSec はその場面にしてからの時間 */
+    fun shouldSwitch(current: Scene?, next: Scene, sinceSwitchSec: Double): Boolean =
+        current == null ||
+            next.gridId != current.gridId ||
+            next.speed != current.speed ||
+            sinceSwitchSec >= C.SCENE_INTERVAL_SEC - C.SCENE_TIMING_TOLERANCE_SEC
+}

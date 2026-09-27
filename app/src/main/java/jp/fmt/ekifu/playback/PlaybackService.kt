@@ -59,6 +59,8 @@ class PlaybackService : MediaSessionService() {
             DefaultMediaNotificationProvider.Builder(this).build().also {
                 it.setSmallIcon(R.drawable.ic_notification)
             },
+            // 通知が後から差し替わると、Media3 は mediaPlayback だけで startForeground し直すので、付け足し直す
+            onChanged = { handler.post { addLocationType() } },
         )
         setMediaNotificationProvider(notifications)
     }
@@ -103,6 +105,7 @@ class PlaybackService : MediaSessionService() {
     /** Media3 の通知を作りつつ、最後に作った通知を覚えておく */
     private class CapturingNotificationProvider(
         private val base: MediaNotification.Provider,
+        private val onChanged: () -> Unit,
     ) : MediaNotification.Provider {
         var last: MediaNotification? = null
             private set
@@ -116,6 +119,7 @@ class PlaybackService : MediaSessionService() {
             val n = base.createNotification(mediaSession, mediaButtonPreferences, actionFactory) { updated ->
                 last = updated
                 onNotificationChangedCallback.onNotificationChanged(updated)
+                onChanged()
             }
             last = n
             return n

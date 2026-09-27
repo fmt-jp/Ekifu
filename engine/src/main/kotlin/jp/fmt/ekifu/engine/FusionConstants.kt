@@ -222,6 +222,15 @@ object FusionConstants {
     /** 停止ボタンのキメの小節数 */
     const val ENDING_KIME_BARS = 2
 
+    // ---- 地点のテーマ（ユーザーと決めたこと：試聴と同じ音の並びをリードがそのまま吹く。長さは仕様外・要調整） ----
+    /** テーマの1音の長さ（ステップ。四分音符）と、最後の音の長さ */
+    const val THEME_NOTE_STEPS = 4
+    const val THEME_LAST_NOTE_STEPS = 8
+    /** テーマのあと、アドリブに入るまでの休み（ステップ） */
+    const val THEME_BREATH_STEPS = 2
+    /** 到着の3〜5小節目で、テーマをゆっくり吹き直すときの1音の長さ（二分音符） */
+    const val ARRIVAL_THEME_SLOW_STEPS = 8
+
     // ---- キメの型とフェーズのつなぎ（仕様外・要調整。参照実装のキメは1種類で、フェーズのつなぎはない） ----
     /** キメの型を選ぶ重み（FusionKime の順：基本・3-3-2・裏から・3連打・ブレイク）。前と同じ型は続けない */
     val KIME_WEIGHTS = doubleArrayOf(3.0, 2.0, 2.0, 2.0, 1.5)

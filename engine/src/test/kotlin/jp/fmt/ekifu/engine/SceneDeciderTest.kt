@@ -94,4 +94,60 @@ class SceneDeciderTest {
         assertEquals(SunLevel.DAY, a.sun)
         assertEquals(SunLevel.NIGHT, SceneDecider.withoutLocation(42L, 2, t0 + 10 * 3_600_000L, jst).sun)
     }
+
+    /** SceneSource と同じ流れ：決めるたびに次に確かめる間隔を速さから選び、切り替えるかを判断する */
+    private fun ride(kmh: Double, minutes: Int): List<Pair<Double, Scene>> {
+        val sd = SceneDecider()
+        var t = 0.0
+        var current: Scene? = null
+        var switchedAt = 0.0
+        val switches = ArrayList<Pair<Double, Scene>>()
+        var speed: Speed? = null
+        while (t <= minutes * 60.0) {
+            val nowMs = t0 + (t * 1000).toLong()
+            val d = sd.decide(fix(kmh * 1000 / 3600 * t, nowMs), nowMs, noVisits)!!
+            if (SceneTiming.shouldSwitch(current, d.scene, t - switchedAt)) {
+                current = d.scene
+                switchedAt = t
+                switches += t to d.scene
+            }
+            speed = d.scene.speed
+            t += SceneTiming.checkIntervalSec(speed)
+        }
+        return switches
+    }
+
+    @Test
+    fun trainSwitchesScenesEveryMinuteWhenTheGridChanges() {
+        val switches = ride(kmh = 60.0, minutes = 20)
+        // 最初の5分は歩きとして確かめ、乗り物と分かってからは1分ごと
+        assertEquals(listOf(0.0, 300.0), switches.take(2).map { it.first })
+        val later = switches.drop(2)
+        assertTrue(later.size >= 10, "乗り物で場面の切り替えが少ない: ${switches.map { it.first }}")
+        later.zipWithNext().forEach { (a, b) -> assertTrue(b.first - a.first <= 5 * 60.0 + 1) }
+        assertTrue(later.all { it.second.speed == Speed.VEHICLE })
+        // 切り替えるのはマスか速さが変わったとき（または5分たったとき）だけ
+        switches.zipWithNext().forEach { (a, b) ->
+            assertTrue(a.second.gridId != b.second.gridId || a.second.speed != b.second.speed || b.first - a.first >= 295.0)
+        }
+    }
+
+    @Test
+    fun walkingKeepsFiveMinuteScenes() {
+        val switches = ride(kmh = 4.8, minutes = 30)
+        switches.zipWithNext().forEach { (a, b) -> assertEquals(300.0, b.first - a.first, 1e-6) }
+        assertEquals(PlaceConstants.NEAR_LOCATION_INTERVAL_SEC, SceneTiming.locationIntervalSec(true, Speed.WALK))
+        assertEquals(MusicConstants.SCENE_INTERVAL_SEC, SceneTiming.locationIntervalSec(false, Speed.WALK))
+        assertEquals(MusicConstants.VEHICLE_SCENE_INTERVAL_SEC, SceneTiming.locationIntervalSec(false, Speed.VEHICLE))
+    }
+
+    @Test
+    fun sameGridAndSpeedWaitsFiveMinutesOnAVehicle() {
+        val a = Scene("xn7e2t", Speed.VEHICLE, Familiarity.NEW, SunLevel.DAY)
+        assertFalse(SceneTiming.shouldSwitch(a, a.copy(sun = SunLevel.TWILIGHT), 60.0))
+        assertTrue(SceneTiming.shouldSwitch(a, a.copy(gridId = "xn7e2v"), 60.0))
+        assertTrue(SceneTiming.shouldSwitch(a, a.copy(speed = Speed.WALK), 60.0))
+        assertTrue(SceneTiming.shouldSwitch(a, a, 300.0))
+        assertTrue(SceneTiming.shouldSwitch(null, a, 0.0))
+    }
 }

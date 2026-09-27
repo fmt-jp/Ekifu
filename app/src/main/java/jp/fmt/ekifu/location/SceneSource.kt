@@ -19,12 +19,13 @@ import jp.fmt.ekifu.engine.CarryOver
 import jp.fmt.ekifu.engine.Geo
 import jp.fmt.ekifu.engine.LocationFix
 import jp.fmt.ekifu.engine.MusicConstants
-import jp.fmt.ekifu.engine.PlaceConstants
 import jp.fmt.ekifu.engine.PlaceEvent
 import jp.fmt.ekifu.engine.PlaceTracker
 import jp.fmt.ekifu.engine.Scene
 import jp.fmt.ekifu.engine.SceneDecider
 import jp.fmt.ekifu.engine.SceneDecision
+import jp.fmt.ekifu.engine.SceneTiming
+import jp.fmt.ekifu.engine.Speed
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -87,6 +88,9 @@ class SceneSource(
     private var latest: LocationFix? = null
     private var ticker: Job? = null
     private var ui = SceneUi(hasPermission)
+    /** いま鳴らしている場面と、それに切り替えた時刻 */
+    private var appliedScene: Scene? = null
+    private var appliedAtMs = 0L
 
     private val callback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
@@ -116,11 +120,17 @@ class SceneSource(
             trackedName = tracker.current?.name,
             trackedState = tracker.state,
         )
-        // 登録地点の1.5km以内では1分ごと、それ以外は5分ごと
-        val wanted = if (tracker.isNear(fix)) nearIntervalMs else sceneIntervalMs
-        if (wanted != intervalMs && ticker != null) requestUpdates(wanted)
+        adjustInterval(fix)
         onUi(ui)
     }
+
+    /** 登録地点の1.5km以内と乗り物のあいだは1分ごと、それ以外は5分ごと */
+    private fun adjustInterval(fix: LocationFix) {
+        val wanted = (SceneTiming.locationIntervalSec(tracker.isNear(fix), currentSpeed()) * 1000).toLong()
+        if (wanted != intervalMs && ticker != null) requestUpdates(wanted)
+    }
+
+    private fun currentSpeed(): Speed? = ui.decision?.scene?.speed
 
     /** 再生開始時の仮の場面（最初の位置が取れるまで）。許可がなければこれが最初の場面 */
     fun initialScene(): Scene {
@@ -129,7 +139,7 @@ class SceneSource(
     }
 
     /** いまの場面（まだ決まっていなければ仮の場面）と登録地点の状態。曲調を切り替えるときに引き継ぐ */
-    fun carryOver(): CarryOver = tracker.carryOver(ui.decision?.scene ?: initialScene())
+    fun carryOver(): CarryOver = tracker.carryOver(appliedScene ?: ui.decision?.scene ?: initialScene())
 
     /** 再生・再開 */
     fun start() {
@@ -143,8 +153,10 @@ class SceneSource(
                 currentFix()?.let { onFix(it) }
                 while (isActive) {
                     decide()
-                    publish(nextSceneAtMs = System.currentTimeMillis() + intervalMs)
-                    delay(intervalMs)
+                    // 乗り物のあいだは1分ごとに確かめる
+                    val wait = (SceneTiming.checkIntervalSec(currentSpeed()) * 1000).toLong()
+                    publish(nextSceneAtMs = System.currentTimeMillis() + wait)
+                    delay(wait)
                 }
             } else {
                 publish(nextSceneAtMs = System.currentTimeMillis() + intervalMs)
@@ -192,8 +204,14 @@ class SceneSource(
             }
         }
         val decision = decider.decide(fix, now) { days } ?: return
-        onScene(decision.scene)
         ui = ui.copy(decision = decision)
+        // 乗り物のあいだはマスか速さが変わったときだけ切り替える（5分たてば切り替える）
+        if (SceneTiming.shouldSwitch(appliedScene, decision.scene, (now - appliedAtMs) / 1000.0)) {
+            onScene(decision.scene)
+            appliedScene = decision.scene
+            appliedAtMs = now
+        }
+        latest?.let { adjustInterval(it) }
     }
 
     private fun publish(nextSceneAtMs: Long?) {
@@ -236,7 +254,6 @@ class SceneSource(
         /** 再生・再開時に最初の位置を待つ上限 */
         private const val FIRST_FIX_TIMEOUT_MS = 20_000L
         private val sceneIntervalMs = (MusicConstants.SCENE_INTERVAL_SEC * 1000).toLong()
-        private val nearIntervalMs = (PlaceConstants.NEAR_LOCATION_INTERVAL_SEC * 1000).toLong()
 
         fun hasLocationPermission(context: Context): Boolean =
             listOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION).any {
