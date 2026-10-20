@@ -171,9 +171,9 @@ class PlaceTracker(places: List<RegisteredPlace> = emptyList()) {
     fun nearest(fix: LocationFix): Pair<RegisteredPlace, Double>? =
         places.map { it to distance(it, fix) }.minByOrNull { it.second }
 
-    /** 登録地点の近く（1.5km以内）にいるか。いるあいだは位置の取得間隔を1分にする */
-    fun isNear(fix: LocationFix): Boolean =
-        places.any { distance(it, fix) <= P.NEAR_PLACE_DISTANCE_M }
+    /** 登録地点の近く（distanceM 以内。既定1.5km、乗り物は3km）にいるか。いるあいだは GPS で15秒ごとに取る */
+    fun isNear(fix: LocationFix, distanceM: Double = P.NEAR_PLACE_DISTANCE_M): Boolean =
+        places.any { distance(it, fix) <= distanceM }
 
     private fun distance(p: RegisteredPlace, fix: LocationFix) = Geo.distanceM(p.lat, p.lng, fix.lat, fix.lng)
 

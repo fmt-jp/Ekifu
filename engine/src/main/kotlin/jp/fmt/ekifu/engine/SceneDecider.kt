@@ -100,6 +100,10 @@ object SceneTiming {
         else -> C.SCENE_INTERVAL_SEC
     }
 
+    /** 登録地点の「近く」とみなす距離：乗り物のあいだは早めに GPS へ切り替えるため広げる */
+    fun nearDistanceM(speed: Speed?): Double =
+        if (speed == Speed.VEHICLE) PlaceConstants.VEHICLE_NEAR_PLACE_DISTANCE_M else PlaceConstants.NEAR_PLACE_DISTANCE_M
+
     /** 高精度（GPS）で位置を取るか：登録地点の近く（1.5km以内）で、まだ到着していないあいだだけ */
     fun highAccuracy(nearPlace: Boolean, arrived: Boolean = false): Boolean = nearPlace && !arrived
 

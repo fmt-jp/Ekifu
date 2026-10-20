@@ -107,6 +107,16 @@ class PlaceTrackerTest {
     }
 
     @Test
+    fun onAVehicleGpsStartsFromThreeKilometres() {
+        val t = PlaceTracker(listOf(park))
+        val fix = at(2500.0, 0.0)
+        assertFalse(t.isNear(fix, SceneTiming.nearDistanceM(Speed.WALK)), "歩きは1.5kmから")
+        assertTrue(t.isNear(fix, SceneTiming.nearDistanceM(Speed.VEHICLE)), "乗り物は3kmから")
+        assertFalse(t.isNear(at(3100.0, 0.0), SceneTiming.nearDistanceM(Speed.VEHICLE)))
+        assertEquals(PlaceConstants.NEAR_PLACE_DISTANCE_M, SceneTiming.nearDistanceM(null))
+    }
+
+    @Test
     fun locationIsCoarseAgainAfterArrival() {
         assertTrue(SceneTiming.highAccuracy(nearPlace = true, arrived = false))
         assertTrue(!SceneTiming.highAccuracy(nearPlace = true, arrived = true))

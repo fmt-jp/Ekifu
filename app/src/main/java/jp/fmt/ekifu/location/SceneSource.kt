@@ -131,11 +131,12 @@ class SceneSource(
     }
 
     /**
-     * 登録地点の1.5km以内は GPS で15秒ごと（到着したあとは省電力で1分ごと）、
+     * 登録地点の1.5km以内（乗り物のあいだは3km以内）は GPS で15秒ごと（到着したあとは省電力で1分ごと）、
      * 乗り物のあいだは1分ごと、それ以外は5分ごと
      */
     private fun adjustInterval(fix: LocationFix) {
-        val near = tracker.isNear(fix)
+        // 乗り物のあいだは3km以内、歩き・静止は1.5km以内を「近く」とする
+        val near = tracker.isNear(fix, SceneTiming.nearDistanceM(currentSpeed()))
         val arrived = tracker.state == PlaceTracker.State.ARRIVED
         val wanted = (SceneTiming.locationIntervalSec(near, currentSpeed(), arrived) * 1000).toLong()
         val high = SceneTiming.highAccuracy(near, arrived)
