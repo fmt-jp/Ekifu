@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
@@ -15,6 +16,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
@@ -36,6 +39,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import jp.fmt.ekifu.data.EkifuDatabase
+import jp.fmt.ekifu.engine.GpsMode
+import jp.fmt.ekifu.engine.LocationPolicy
+import jp.fmt.ekifu.engine.LocationPreset
 import jp.fmt.ekifu.engine.MusicStyle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -102,6 +108,8 @@ fun SettingsScreen(onBack: () -> Unit) {
                 }
             }
 
+            LocationCard()
+
             SettingCard {
                 Text("訪問履歴", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Text(
@@ -159,6 +167,93 @@ fun SettingsScreen(onBack: () -> Unit) {
         )
     }
 }
+
+/** 位置の取り方：おまかせ（電池優先・標準・精度優先）か、カスタムで項目ごとに */
+@Composable
+private fun LocationCard() {
+    val context = LocalContext.current
+    val preset by AppSettings.locationPreset.collectAsStateWithLifecycle()
+    val custom by AppSettings.customPolicy.collectAsStateWithLifecycle()
+    SettingCard {
+        Text("位置の取り方", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text(
+            "GPS は正確ですが電池を使います。再生中に変えても、すぐ新しい取り方に切り替わります。",
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Column(Modifier.selectableGroup()) {
+            LocationPreset.entries.forEach { p ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .selectable(
+                            selected = p == preset,
+                            onClick = { AppSettings.setLocationPreset(context, p) },
+                            role = Role.RadioButton,
+                        )
+                        .padding(vertical = 4.dp),
+                ) {
+                    RadioButton(selected = p == preset, onClick = null)
+                    Column(Modifier.padding(start = 12.dp)) {
+                        Text(p.label, style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            p.description,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
+        if (preset != LocationPreset.CUSTOM) return@SettingCard
+        HorizontalDivider()
+        fun set(p: LocationPolicy) = AppSettings.setCustomPolicy(context, p)
+        ChoiceRow("GPS の使い方", GpsMode.entries, custom.gpsMode, { it.label }) { set(custom.copy(gpsMode = it)) }
+        ChoiceRow(
+            "地点の近くとみなす範囲（乗り物のときはその2倍）",
+            LocationPolicy.NEAR_DISTANCE_CHOICES_M,
+            custom.nearDistanceM,
+            ::formatDistance,
+        ) { set(custom.copy(nearDistanceM = it)) }
+        ChoiceRow("ふだん（歩き・静止）の間隔", LocationPolicy.NORMAL_INTERVAL_CHOICES_SEC, custom.normalIntervalSec, ::formatSec) {
+            set(custom.copy(normalIntervalSec = it))
+        }
+        ChoiceRow("乗り物の間隔", LocationPolicy.VEHICLE_INTERVAL_CHOICES_SEC, custom.vehicleIntervalSec, ::formatSec) {
+            set(custom.copy(vehicleIntervalSec = it))
+        }
+        ChoiceRow("地点の近くの間隔", LocationPolicy.NEAR_INTERVAL_CHOICES_SEC, custom.nearIntervalSec, ::formatSec) {
+            set(custom.copy(nearIntervalSec = it))
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("到着したあとも GPS を続ける", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "オフなら、到着したら省電力で1分ごとに戻します。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(checked = custom.keepGpsAfterArrival, onCheckedChange = { set(custom.copy(keepGpsAfterArrival = it)) })
+        }
+    }
+}
+
+@Composable
+private fun <T> ChoiceRow(label: String, choices: List<T>, selected: T, text: (T) -> String, onSelect: (T) -> Unit) {
+    Column {
+        Text(label, style = MaterialTheme.typography.bodyMedium)
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+        ) {
+            choices.forEach { c -> FilterChip(selected = c == selected, onClick = { onSelect(c) }, label = { Text(text(c)) }) }
+        }
+    }
+}
+
+private fun formatSec(sec: Double): String = if (sec < 60) "${sec.toInt()}秒" else "${(sec / 60).toInt()}分"
+
+private fun formatDistance(m: Double): String = if (m < 1000) "${m.toInt()}m" else "%skm".format((m / 1000).toString().removeSuffix(".0"))
 
 private fun styleDescription(style: MusicStyle) = when (style) {
     MusicStyle.HEALING -> "パッドとベルの穏やかなインストゥルメンタル"

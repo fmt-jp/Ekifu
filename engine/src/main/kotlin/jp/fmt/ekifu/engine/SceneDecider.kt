@@ -87,25 +87,37 @@ class SceneDecider {
  */
 object SceneTiming {
 
-    /** 次に場面を確かめるまでの時間 */
-    fun checkIntervalSec(speed: Speed?): Double =
-        if (speed == Speed.VEHICLE) C.VEHICLE_SCENE_INTERVAL_SEC else C.SCENE_INTERVAL_SEC
+    /** 次に場面を確かめるまでの時間：位置の取得間隔に合わせる（歩き・静止は長くても5分） */
+    fun checkIntervalSec(speed: Speed?, policy: LocationPolicy = LocationPolicy.STANDARD): Double =
+        if (speed == Speed.VEHICLE) policy.vehicleIntervalSec else minOf(policy.normalIntervalSec, C.SCENE_INTERVAL_SEC)
 
-    /** 位置の取得間隔：登録地点の近く（1.5km以内）か乗り物のあいだは短く */
-    fun locationIntervalSec(nearPlace: Boolean, speed: Speed?, arrived: Boolean = false): Double = when {
-        // 到着したあとは電池を控え、離れたかどうかを1分ごとに確かめるだけにする
-        arrived -> PlaceConstants.ARRIVED_LOCATION_INTERVAL_SEC
-        nearPlace -> PlaceConstants.NEAR_LOCATION_INTERVAL_SEC
-        speed == Speed.VEHICLE -> C.VEHICLE_SCENE_INTERVAL_SEC
-        else -> C.SCENE_INTERVAL_SEC
+    /** 位置の取得間隔：登録地点の近くか乗り物のあいだは短く */
+    fun locationIntervalSec(
+        nearPlace: Boolean,
+        speed: Speed?,
+        arrived: Boolean = false,
+        policy: LocationPolicy = LocationPolicy.STANDARD,
+    ): Double = when {
+        // 到着したあとは電池を控え、離れたかどうかを1分ごとに確かめるだけにする（GPS を続ける設定でなければ）
+        arrived && !policy.keepGpsAfterArrival -> PlaceConstants.ARRIVED_LOCATION_INTERVAL_SEC
+        nearPlace -> policy.nearIntervalSec
+        speed == Speed.VEHICLE -> policy.vehicleIntervalSec
+        else -> policy.normalIntervalSec
     }
 
     /** 登録地点の「近く」とみなす距離：乗り物のあいだは早めに GPS へ切り替えるため広げる */
-    fun nearDistanceM(speed: Speed?): Double =
-        if (speed == Speed.VEHICLE) PlaceConstants.VEHICLE_NEAR_PLACE_DISTANCE_M else PlaceConstants.NEAR_PLACE_DISTANCE_M
+    fun nearDistanceM(speed: Speed?, policy: LocationPolicy = LocationPolicy.STANDARD): Double =
+        policy.nearDistanceM * if (speed == Speed.VEHICLE) PlaceConstants.VEHICLE_NEAR_DISTANCE_FACTOR else 1.0
 
-    /** 高精度（GPS）で位置を取るか：登録地点の近く（1.5km以内）で、まだ到着していないあいだだけ */
-    fun highAccuracy(nearPlace: Boolean, arrived: Boolean = false): Boolean = nearPlace && !arrived
+    /** 高精度（GPS）で位置を取るか。到着したあとは、GPS を続ける設定でなければ省電力に戻す */
+    fun highAccuracy(nearPlace: Boolean, arrived: Boolean = false, policy: LocationPolicy = LocationPolicy.STANDARD): Boolean {
+        if (arrived && !policy.keepGpsAfterArrival) return false
+        return when (policy.gpsMode) {
+            GpsMode.OFF -> false
+            GpsMode.NEAR_PLACES -> nearPlace
+            GpsMode.ALWAYS -> true
+        }
+    }
 
     /** 新しく決めた場面に切り替えるか。current はいま鳴っている場面、sinceSwitchSec はその場面にしてからの時間 */
     fun shouldSwitch(current: Scene?, next: Scene, sinceSwitchSec: Double): Boolean =

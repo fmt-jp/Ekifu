@@ -15,8 +15,8 @@ android {
         applicationId = "jp.fmt.ekifu"
         minSdk = 26
         targetSdk = 35
-        versionCode = 14
-        versionName = "0.6.8-vehicle-gps"
+        versionCode = 15
+        versionName = "0.6.9-location-settings"
     }
 
     signingConfigs {

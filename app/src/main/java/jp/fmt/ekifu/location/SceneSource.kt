@@ -26,12 +26,14 @@ import jp.fmt.ekifu.engine.SceneDecider
 import jp.fmt.ekifu.engine.SceneDecision
 import jp.fmt.ekifu.engine.SceneTiming
 import jp.fmt.ekifu.engine.Speed
+import jp.fmt.ekifu.settings.AppSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -109,6 +111,16 @@ class SceneSource(
             placesJob = scope.launch {
                 db.places().observeAll().collect { list -> tracker.setPlaces(list.map { it.toRegistered() }) }
             }
+            // 設定で位置の取り方を変えたら、再生中ならすぐ取り直す
+            scope.launch {
+                AppSettings.locationPolicy.drop(1).collect {
+                    if (ticker != null) {
+                        ticker?.cancel()
+                        ticker = null
+                        start()
+                    }
+                }
+            }
         }
     }
 
@@ -135,11 +147,12 @@ class SceneSource(
      * 乗り物のあいだは1分ごと、それ以外は5分ごと
      */
     private fun adjustInterval(fix: LocationFix) {
-        // 乗り物のあいだは3km以内、歩き・静止は1.5km以内を「近く」とする
-        val near = tracker.isNear(fix, SceneTiming.nearDistanceM(currentSpeed()))
+        // 設定の位置の取り方（既定は標準：乗り物のあいだは3km以内、歩き・静止は1.5km以内を「近く」とする）
+        val policy = AppSettings.locationPolicy.value
+        val near = tracker.isNear(fix, SceneTiming.nearDistanceM(currentSpeed(), policy))
         val arrived = tracker.state == PlaceTracker.State.ARRIVED
-        val wanted = (SceneTiming.locationIntervalSec(near, currentSpeed(), arrived) * 1000).toLong()
-        val high = SceneTiming.highAccuracy(near, arrived)
+        val wanted = (SceneTiming.locationIntervalSec(near, currentSpeed(), arrived, policy) * 1000).toLong()
+        val high = SceneTiming.highAccuracy(near, arrived, policy)
         if ((wanted != intervalMs || high != highAccuracy) && ticker != null) requestUpdates(wanted, high)
     }
 
@@ -162,12 +175,17 @@ class SceneSource(
             if (hasPermission) {
                 // 最初の位置を待つあいだに登録地点を読み込んでおく
                 tracker.setPlaces(db.places().observeAll().first().map { it.toRegistered() })
-                requestUpdates(intervalMs)
+                // 最初はふだんの取り方で始め、位置が取れたら地点の近くかどうかで合わせる
+                val policy = AppSettings.locationPolicy.value
+                requestUpdates(
+                    (SceneTiming.locationIntervalSec(false, null, policy = policy) * 1000).toLong(),
+                    SceneTiming.highAccuracy(false, policy = policy),
+                )
                 currentFix()?.let { onFix(it) }
                 while (isActive) {
                     decide()
-                    // 乗り物のあいだは1分ごとに確かめる
-                    val wait = (SceneTiming.checkIntervalSec(currentSpeed()) * 1000).toLong()
+                    // 位置の取得間隔に合わせて確かめる（標準は歩き5分・乗り物1分）
+                    val wait = (SceneTiming.checkIntervalSec(currentSpeed(), AppSettings.locationPolicy.value) * 1000).toLong()
                     publish(nextSceneAtMs = System.currentTimeMillis() + wait)
                     delay(wait)
                 }
