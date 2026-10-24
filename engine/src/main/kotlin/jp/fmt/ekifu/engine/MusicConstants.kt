@@ -149,6 +149,15 @@ object MusicConstants {
     /** 到着時のテーマ（ベル） */
     const val THEME_BELL_GAIN = 0.2
 
+    /**
+     * 到着の合図（ユーザーと決めたこと：曲調によらず同じ形。鳴っている音を余韻に入らせ、ベルの上りの3音）。
+     * 音は主音 F の和音（F・A・C）。そのあと ARRIVAL_CHIME_GAP_SEC おいて到着の和音とテーマ。値は仕様外・要調整
+     */
+    val ARRIVAL_CHIME_MIDI = intArrayOf(77, 81, 84)
+    const val ARRIVAL_CHIME_NOTE_SEC = 0.2
+    const val ARRIVAL_CHIME_GAIN = 0.32
+    const val ARRIVAL_CHIME_GAP_SEC = 1.6
+
     // ---- 音色（4章） ----
     const val PAD_DETUNE_CENTS = 6.0
     const val PAD_LOWPASS_HZ = 1400.0

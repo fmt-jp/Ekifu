@@ -15,8 +15,8 @@ android {
         applicationId = "jp.fmt.ekifu"
         minSdk = 26
         targetSdk = 35
-        versionCode = 15
-        versionName = "0.6.9-location-settings"
+        versionCode = 16
+        versionName = "0.7.0-arrival-chime"
     }
 
     signingConfigs {

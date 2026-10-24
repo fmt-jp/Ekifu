@@ -240,6 +240,14 @@ object FusionConstants {
     val BELL_STAY_GAIN = db(-18.0)
     /** 滞在中は、この数のブロックごとにベルでテーマを鳴らす（到着の直後のブロックは鳴らさない） */
     const val BELL_STAY_EVERY_BLOCKS = 2
+    /**
+     * 到着の合図（ユーザーと決めたこと：曲調によらず同じ形。曲を一瞬止めてベルの上りの3音＋クラッシュ）。
+     * 到着ブロックの1小節目。音は主音 D の和音（D・F♯・A）、8分で上る。音量は仕様外・要調整
+     */
+    val ARRIVAL_CHIME_MIDI = intArrayOf(74, 78, 81)
+    val ARRIVAL_CHIME_STEPS = intArrayOf(0, 2, 4)
+    val BELL_CHIME_GAIN = db(-4.0)
+
     /** 外側の円に入った最初のブロック：伴奏を止める小節数と、その上のベル（1回目・2回目） */
     const val ENTRY_BREAK_BARS = 2
     val BELL_ENTRY_GAIN = db(-6.0)

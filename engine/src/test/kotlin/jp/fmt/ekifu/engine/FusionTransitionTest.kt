@@ -138,17 +138,25 @@ class FusionTransitionTest {
     }
 
     @Test
-    fun arrivalIsPrecededByABreak() {
+    fun arrivalBuildsUpThenStopsForTheChime() {
         val c = newComposer()
         val r = run(c, 10 * 14.6, listOf(2 * 14.6 to { it.approach(park) }, 5.3 * 14.6 to { it.arrive(park) }))
         val arrive = r.blocks.first { it.phase == Phase.ARRIVE }
         val before = r.blocks.first { it.index == arrive.index - 1 }
         assertEquals(Phase.APPROACH, before.phase)
-        val middle = barBefore(r, arrive, 1, F.BREAK_PICKUP_FROM - 1).filter { it !is LeadNote && it !is FusionControl && it !is BellNote }
-        assertTrue(middle.isEmpty(), "ブレイク中に伴奏が鳴っている: $middle")
-        assertEquals(4, snares(barBefore(r, arrive, F.BREAK_PICKUP_FROM)).size)
-        val high = barBefore(r, arrive).filterIsInstance<LeadNote>().single()
-        assertTrue(high.midi >= F.HIGH_TONE_MIN, "ハイトーンで残っていない: ${high.midi}")
+        // 直前の小節はスネアの16分で盛り上げる
+        assertTrue(snares(barBefore(r, arrive)).size >= F.STEPS_PER_BAR, "盛り上げのスネアがない")
+        // 到着の1小節目：頭のキック・クラッシュだけで伴奏とリードは止まり、ベルが主音の和音を上る
+        val barEnd = arrive.startSec + (F.STEPS_PER_BAR - 0.5) * arrive.stepSec
+        val first = r.events.filter { it.timeSec >= arrive.startSec - arrive.stepSec / 2 && it.timeSec < barEnd }
+        val drums = first.filterIsInstance<DrumHit>()
+        assertEquals(setOf(DrumKind.KICK, DrumKind.CRASH), drums.map { it.kind }.toSet(), "合図の小節にドラム: $drums")
+        assertEquals(2, drums.size)
+        assertTrue(first.none { it is PolyNote || it is LeadNote }, "合図の小節で伴奏かリードが鳴っている")
+        val chime = first.filterIsInstance<BellNote>().sortedBy { it.timeSec }
+        assertEquals(F.ARRIVAL_CHIME_MIDI.toList(), chime.map { it.midi })
+        assertTrue(chime.all { it.gain == F.BELL_CHIME_GAIN })
+        chime.zipWithNext().forEach { (a, b) -> assertTrue(b.midi > a.midi, "上っていない") }
     }
 
     @Test

@@ -107,7 +107,8 @@ class FusionThemeTest {
         val (events, blocks) = run(14, mapOf(2 to { it.approach(park) }, 4 to { it.arrive(park) }, 10 to { it.leave() }))
         val theme = Motifs.theme(park.themeSeed)
         fun check(b: FusionBlock, gain: Double, what: String, passes: Int = 1) {
-            val bells = bellsIn(events, b, blocks)
+            // 到着の合図（主音の和音の3音）はテーマとは別に数える
+            val bells = bellsIn(events, b, blocks).filter { it.gain != F.BELL_CHIME_GAIN }
             assertEquals(theme.size * passes, bells.size, "$what：ベルの数")
             bells.chunked(theme.size).forEach { pass ->
                 // 試聴と同じ音の並び（調だけ移す）
@@ -121,6 +122,8 @@ class FusionThemeTest {
         }
         val arrive = blocks.first { it.phase == Phase.ARRIVE }
         check(arrive, F.BELL_ARRIVE_GAIN, "到着", passes = 2)
+        val chime = bellsIn(events, arrive, blocks).filter { it.gain == F.BELL_CHIME_GAIN }
+        assertEquals(F.ARRIVAL_CHIME_MIDI.toList(), chime.map { it.midi }, "到着の合図")
         // 滞在：到着の直後のブロックは鳴らさず、そこから1ブロックおき
         val stays = blocks.filter { it.phase == Phase.STAY }
         assertTrue(stays.size >= 4)

@@ -259,13 +259,22 @@ class Composer(seed: Int, private val config: ComposerConfig = ComposerConfig())
         chord = progression[progIndex]
         chordBeats = if (phase == Phase.ARRIVE) C.ARRIVE_CHORD_BEATS else C.CHORD_BEATS
         out += ReleaseEvent(timeSec, setOf(Instrument.PAD, Instrument.BASS))
-        emitChord(timeSec, chord)
+        // 到着の合図：鳴っている音を余韻に入らせ、ベルの上りの3音。到着の和音とテーマはそのあと
+        val arrivalChime = phase == Phase.ARRIVE && entered
+        val chordAt = if (arrivalChime) timeSec + C.ARRIVAL_CHIME_GAP_SEC else timeSec
+        if (arrivalChime) {
+            C.ARRIVAL_CHIME_MIDI.forEachIndexed { i, midi ->
+                out += NoteEvent(timeSec + i * C.ARRIVAL_CHIME_NOTE_SEC, Instrument.BELL, midi, C.ARRIVAL_CHIME_GAIN, pan = 0.0)
+            }
+            melodyMuteUntilSec = chordAt
+        }
+        emitChord(chordAt, chord)
 
         // モチーフ（同じ切り替えで重ならないよう、地点のテーマを優先）
         val theme = placeTheme
         when {
             phase == Phase.ARRIVE && entered && theme != null ->
-                playMotif(theme, Instrument.BELL, C.THEME_BELL_GAIN)
+                playMotif(theme, Instrument.BELL, C.THEME_BELL_GAIN, startSec = chordAt)
             phase == Phase.APPROACH && theme != null ->
                 playMotif(theme, Instrument.PLUCK, C.QUIET_PLUCK_GAIN)
             leaveTheme != null ->
@@ -347,12 +356,12 @@ class Composer(seed: Int, private val config: ComposerConfig = ComposerConfig())
         out += chordEvents(atSec, chord, scene)
     }
 
-    private fun playMotif(notes: List<Int>, instrument: Instrument, gain: Double) {
+    private fun playMotif(notes: List<Int>, instrument: Instrument, gain: Double, startSec: Double = timeSec) {
         val interval = C.MOTIF_NOTE_BEATS * beatSec.value
         notes.forEachIndexed { i, midi ->
-            out += NoteEvent(timeSec + i * interval, instrument, midi, gain, pan = 0.0)
+            out += NoteEvent(startSec + i * interval, instrument, midi, gain, pan = 0.0)
         }
-        melodyMuteUntilSec = timeSec + (notes.size + 1) * interval
+        melodyMuteUntilSec = startSec + (notes.size + 1) * interval
     }
 
     private fun melody(onBeat: Boolean) {

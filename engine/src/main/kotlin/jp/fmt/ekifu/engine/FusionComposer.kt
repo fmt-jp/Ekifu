@@ -51,12 +51,10 @@ enum class FusionKime(val label: String, vararg val hits: Int) {
 
 /** フェーズの変わり目で、前のブロックの最後の小節に入れるつなぎ（仕様外・要調整） */
 enum class FusionTransition(val label: String) {
-    /** 接近へ：小節まるごとスネアの16分で盛り上げ、リードが駆け上がる */
+    /** 接近・到着へ：小節まるごとスネアの16分で盛り上げ、リードが駆け上がる（到着は次の小節でぴたっと止めて合図） */
     BUILD_UP("盛り上げ"),
     /** 道中へ：小節の後半からスネアの16分とベースの歩みで次の頭へ */
     PICK_UP("呼び込み"),
-    /** 到着へ：頭の1発で止まり、リードのハイトーンだけを残してスネアで到着へ */
-    BREAK_IN("ブレイク"),
     /** 滞在へ：伸ばした和音の上でハイハットだけを細くしていく */
     SETTLE("落ち着き"),
 }
@@ -287,7 +285,11 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
         val p = place
         when {
             phase == Phase.ARRIVE && p != null -> {
-                bellTheme(block, p, 0.0, F.THEME_NOTE_STEPS, F.BELL_ARRIVE_GAIN, events)
+                // 到着の合図（1小節目）→ テーマ（2小節目）→ ゆっくり吹き直し（3〜5小節目）
+                F.ARRIVAL_CHIME_MIDI.forEachIndexed { i, midi ->
+                    events += BellNote(block.startSec + F.ARRIVAL_CHIME_STEPS[i] * block.stepSec, midi, F.BELL_CHIME_GAIN)
+                }
+                bellTheme(block, p, F.STEPS_PER_BAR.toDouble(), F.THEME_NOTE_STEPS, F.BELL_ARRIVE_GAIN, events)
                 bellTheme(block, p, 2.0 * F.STEPS_PER_BAR, F.ARRIVAL_THEME_SLOW_STEPS, F.BELL_ARRIVE_SLOW_GAIN, events)
             }
             // 外側の円に入った最初のブロックは、伴奏を止めた2小節でベルを大きく2回
@@ -351,7 +353,8 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
 
     private fun transitionFor(from: Phase, to: Phase): FusionTransition? = when {
         from == to -> null
-        to == Phase.ARRIVE -> FusionTransition.BREAK_IN
+        // 到着は盛り上げてから、到着ブロックの1小節目でぴたっと止めて合図を鳴らす
+        to == Phase.ARRIVE -> FusionTransition.BUILD_UP
         to == Phase.APPROACH -> FusionTransition.BUILD_UP
         // 区切りとの行き来は、区切りのキメがつなぎになる
         to == Phase.JOURNEY && from != Phase.INTERLUDE -> FusionTransition.PICK_UP
@@ -488,16 +491,6 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
                     snareRoll(F.BUILD_HALF_FROM)
                     // リードはひと呼吸（次のブロックの頭から入る）
                 }
-                FusionTransition.BREAK_IN -> {
-                    hitAndStop()
-                    val target = nearestPc(F.HIGH_TONE_TARGET, ch.tensionPcs() + ch.targetPcs(), 0, F.HIGH_TONE_MIN, F.LEAD_MAX_MIDI)
-                    cur = target
-                    writeLead(
-                        block,
-                        listOf(LeadStep(base + 2, 10.0, target, 0.95, vibrato = true, glideSec = F.GLIDE_HIGH_TONE_SEC)),
-                        out,
-                    )
-                }
                 FusionTransition.SETTLE -> {
                     keys(out, block, t(0), 14.0, ch, 0.6)
                     pushed = false
@@ -511,17 +504,6 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
                     writeLead(block, listOf(LeadStep(base, 12.0, home, 0.7, fall = true, vibrato = true)), out)
                 }
             }
-        }
-
-        /** 頭の1発で全員が止まり、最後の1拍でスネアが次へつなぐ */
-        private fun hitAndStop() {
-            keys(out, block, t(0), 1.5, ch, 0.9)
-            pushed = false
-            out += PolyNote(t(0), PolyPart.BASS, ch.bassRoot, 1.5 * block.stepSec, 1.0)
-            out += DrumHit(t(0), DrumKind.KICK, 1.0)
-            out += DrumHit(t(0), DrumKind.SNARE, 0.9)
-            out += DrumHit(t(0), DrumKind.CRASH, 0.9)
-            breakPickup(block, base, out)
         }
 
         /** from から小節の終わりまで、スネアの16分をだんだん強く */
@@ -567,6 +549,12 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
                 when {
                     block.entry && b < F.ENTRY_BREAK_BARS -> {
                         entryBreak(b, o, ch)
+                        pushed = false
+                    }
+                    // 到着の1小節目は合図だけ：伴奏を止め、頭のキック・クラッシュの上でベルが上る
+                    block.phase == Phase.ARRIVE && b == 0 -> {
+                        out += DrumHit(t(o), DrumKind.KICK, 1.0)
+                        out += DrumHit(t(o), DrumKind.CRASH, 1.0)
                         pushed = false
                     }
                     block.phase == Phase.ARRIVE && b > ARRIVAL_KIME_BAR -> {
@@ -923,14 +911,18 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
         }
     }
 
-    /** 到着：テーマをそのまま吹き（1・2小節目）、ゆっくり吹き直して（3〜5小節目）、キメのあと DM9 の上で主音を伸ばす */
+    /**
+     * 到着：1小節目は合図のあいだ休み、テーマをそのまま吹き（2小節目）、ゆっくり吹き直して（3〜5小節目）、
+     * キメのあと DM9 の上で主音を伸ばす
+     */
     private fun arrivalLead(block: FusionBlock, events: MutableList<FusionEvent>) {
-        val theme = themeNotes(place?.themeSeed ?: 0, block.chords[0])
+        val themeFrom = F.STEPS_PER_BAR.toDouble()
+        val theme = themeNotes(place?.themeSeed ?: 0, block.chords[1])
         val notes = ArrayList<LeadStep>()
         val slowFrom = 2.0 * F.STEPS_PER_BAR
         val kimeFrom = ARRIVAL_KIME_BAR * F.STEPS_PER_BAR.toDouble()
         theme.forEachIndexed { i, m ->
-            val step = (i * F.THEME_NOTE_STEPS).toDouble()
+            val step = themeFrom + i * F.THEME_NOTE_STEPS
             val len = if (i == theme.size - 1) slowFrom - step else F.THEME_NOTE_STEPS * 0.95
             notes += LeadStep(step, len, m, if (i == 0) 0.9 else 0.8, scoop = if (i == 0) 2 else 0, vibrato = i == theme.size - 1)
         }
