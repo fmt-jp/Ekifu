@@ -211,6 +211,20 @@ abstract class FusionVoice {
 
     abstract fun next(): Double
     abstract fun copy(): FusionVoice
+
+    /** 同じ組の音が鳴ったときに止める（ハイハットの開け閉め）。合成の音では何もしない */
+    open fun release() {}
+}
+
+/** リードの発音体（シンセのEWI風 [LeadVoice]、サンプルの [SampleLead]） */
+interface LeadSound {
+    val sounding: Boolean
+    var filterBaseHz: Double
+    fun noteOn(midi: Double, glideSec: Double, velocity: Double, vibratoCents: Double, vibratoRampSec: Double)
+    fun moveTo(midi: Double, sec: Double)
+    fun noteOff()
+    fun next(): Double
+    fun copy(): LeadSound
 }
 
 /** シンセブラス：ノコギリ波2本（±5セント）。durFrames のあと余韻に入る */
@@ -353,7 +367,7 @@ class NoiseVoice(
  * ノコギリ波2本（±4セント）＋1オクターブ下の矩形波、それぞれフィルターのエンベロープつき。
  * 状態（位相・音程・エンベロープ・フィルター）はチャンクをまたいで引き継ぐ。
  */
-class LeadVoice(private val sampleRate: Int) {
+class LeadVoice(private val sampleRate: Int) : LeadSound {
     private val detune = 2.0.pow(F.LEAD_DETUNE_CENTS / 1200.0)
     private var p1 = 0.0
     private var p2 = 0.33
@@ -366,7 +380,7 @@ class LeadVoice(private val sampleRate: Int) {
     private var vibTarget = 0.0
     private var vibStep = 0.0
     private var velocity = 0.0
-    var filterBaseHz = F.LEAD_FILTER_BASE_HZ
+    override var filterBaseHz = F.LEAD_FILTER_BASE_HZ
     private var amp = Envelope(sampleRate, F.LEAD_AMP_ENV)
     private var filt = Envelope(sampleRate, F.LEAD_FILTER_ENV)
     private var subAmp = Envelope(sampleRate, F.SUB_AMP_ENV)
@@ -375,13 +389,13 @@ class LeadVoice(private val sampleRate: Int) {
     private var subLp = Biquad(sampleRate, F.SUB_FILTER_BASE_HZ, F.SUB_FILTER_Q)
     private var counter = 0
 
-    val sounding: Boolean get() = !amp.idle || !subAmp.idle
+    override val sounding: Boolean get() = !amp.idle || !subAmp.idle
 
     /**
      * 発音。鳴っている最中なら glideSec かけて音程を滑らせ、エンベロープはいまの値から立ち上げ直す
      * （鳴っていなければ音程はその場で合わせる）
      */
-    fun noteOn(midi: Double, glideSec: Double, velocity: Double, vibratoCents: Double, vibratoRampSec: Double) {
+    override fun noteOn(midi: Double, glideSec: Double, velocity: Double, vibratoCents: Double, vibratoRampSec: Double) {
         if (amp.level > SILENT_LEVEL) moveTo(midi, glideSec) else {
             pitch = midi
             glideLeft = 0
@@ -397,7 +411,7 @@ class LeadVoice(private val sampleRate: Int) {
     }
 
     /** 音程を sec かけて midi へ（しゃくり・フォール・グライド） */
-    fun moveTo(midi: Double, sec: Double) {
+    override fun moveTo(midi: Double, sec: Double) {
         val frames = (sec * sampleRate).toInt()
         if (frames <= 0) {
             pitch = midi
@@ -408,7 +422,7 @@ class LeadVoice(private val sampleRate: Int) {
         }
     }
 
-    fun noteOff() {
+    override fun noteOff() {
         amp.gateOff()
         filt.gateOff()
         subAmp.gateOff()
@@ -417,7 +431,7 @@ class LeadVoice(private val sampleRate: Int) {
         vibDepth = 0.0
     }
 
-    fun next(): Double {
+    override fun next(): Double {
         if (!sounding) return 0.0
         if (glideLeft > 0) {
             pitch += glideStep
@@ -447,7 +461,7 @@ class LeadVoice(private val sampleRate: Int) {
         return (lp.process(saw) * a * F.LEAD_GAIN + subLp.process(sq) * sa * F.SUB_GAIN) * velocity
     }
 
-    fun copy() = LeadVoice(sampleRate).also {
+    override fun copy() = LeadVoice(sampleRate).also {
         it.p1 = p1
         it.p2 = p2
         it.ps = ps

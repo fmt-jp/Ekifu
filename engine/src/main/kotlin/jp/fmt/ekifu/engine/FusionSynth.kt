@@ -1,5 +1,6 @@
 package jp.fmt.ekifu.engine
 
+import jp.fmt.ekifu.engine.dsp.BandSounds
 import jp.fmt.ekifu.engine.dsp.BassVoice2
 import jp.fmt.ekifu.engine.dsp.BellVoice
 import jp.fmt.ekifu.engine.dsp.Biquad
@@ -9,10 +10,13 @@ import jp.fmt.ekifu.engine.dsp.Compressor
 import jp.fmt.ekifu.engine.dsp.FdnReverb
 import jp.fmt.ekifu.engine.dsp.FilterType
 import jp.fmt.ekifu.engine.dsp.FusionVoice
+import jp.fmt.ekifu.engine.dsp.LeadSound
 import jp.fmt.ekifu.engine.dsp.LeadVoice
 import jp.fmt.ekifu.engine.dsp.Limiter
 import jp.fmt.ekifu.engine.dsp.MembraneVoice
 import jp.fmt.ekifu.engine.dsp.NoiseVoice
+import jp.fmt.ekifu.engine.dsp.SampleLead
+import jp.fmt.ekifu.engine.dsp.SampleVoice
 import jp.fmt.ekifu.engine.dsp.StereoDelay
 import jp.fmt.ekifu.engine.dsp.Voice
 import jp.fmt.ekifu.engine.dsp.panLeft
@@ -21,6 +25,7 @@ import java.util.PriorityQueue
 import kotlin.math.abs
 import kotlin.math.roundToLong
 import kotlin.math.tanh
+import jp.fmt.ekifu.engine.BandConstants as B
 import jp.fmt.ekifu.engine.FusionConstants as F
 import jp.fmt.ekifu.engine.MusicConstants as C
 
@@ -28,7 +33,12 @@ import jp.fmt.ekifu.engine.MusicConstants as C
  * フュージョンの合成（12.8）。音符イベント → PCM。
  * 鳴っている音・リードの状態・空間系の内部バッファ・フィルターは render をまたいで引き継ぎ、copy() で複製できる。
  */
-class FusionSynth(private val sampleRate: Int = C.SAMPLE_RATE, noiseSeed: Int = 1) : Renderer {
+class FusionSynth(
+    private val sampleRate: Int = C.SAMPLE_RATE,
+    noiseSeed: Int = 1,
+    /** 生音フュージョン：鍵盤・ベース・ドラム・リードをサウンドフォントの楽器で鳴らす（null ならシンセの音） */
+    private val sounds: BandSounds? = null,
+) : Renderer {
 
     /** リードのイベントを発音・音程移動・消音に分けたもの */
     private sealed interface LeadAction {
@@ -57,14 +67,14 @@ class FusionSynth(private val sampleRate: Int = C.SAMPLE_RATE, noiseSeed: Int = 
     private var bass = ArrayList<FusionVoice>()
     private var drums = ArrayList<FusionVoice>()
     private var hats = ArrayList<FusionVoice>()
-    private var lead = LeadVoice(sampleRate)
+    private var lead: LeadSound = sounds?.let { SampleLead(sampleRate, it) } ?: LeadVoice(sampleRate)
     /** 地点のテーマのベル（癒しと同じ音色） */
     private var bells = ArrayList<Voice>()
 
-    private var brassLp = Biquad(sampleRate, F.BRASS_LOWPASS_HZ)
+    private var brassLp = Biquad(sampleRate, if (sounds != null) B.KEYS_LOWPASS_HZ else F.BRASS_LOWPASS_HZ)
     private var chorus = Chorus(sampleRate)
-    private var bassLp = Biquad(sampleRate, F.BASS_LOWPASS_HZ)
-    private var leadLp = Biquad(sampleRate, F.LEAD_POST_LOWPASS_HZ)
+    private var bassLp = Biquad(sampleRate, if (sounds != null) B.BASS_LOWPASS_HZ else F.BASS_LOWPASS_HZ)
+    private var leadLp = Biquad(sampleRate, if (sounds != null) B.LEAD_LOWPASS_HZ else F.LEAD_POST_LOWPASS_HZ)
     private var delay = StereoDelay(
         sampleRate,
         maxDelaySec = 60.0 / F.MIN_BPM / 4 * F.DELAY_STEPS,
@@ -115,7 +125,7 @@ class FusionSynth(private val sampleRate: Int = C.SAMPLE_RATE, noiseSeed: Int = 
         queue += Scheduled(f, order++, action)
     }
 
-    fun copy(): FusionSynth = FusionSynth(sampleRate).also {
+    fun copy(): FusionSynth = FusionSynth(sampleRate, sounds = sounds).also {
         it.queue = PriorityQueue(queue)
         it.order = order
         it.noiseSeed = noiseSeed
@@ -231,6 +241,14 @@ class FusionSynth(private val sampleRate: Int = C.SAMPLE_RATE, noiseSeed: Int = 
             is LeadAction.Off -> if (action.id == leadCurrent) lead.noteOff()
             is PolyNote -> {
                 val frames = (action.durSec * sampleRate).roundToLong()
+                val s = sounds
+                if (s != null) {
+                    when (action.part) {
+                        PolyPart.BRASS -> brass += SampleVoice(s, s.keys, action.midi, action.velocity, sampleRate, B.KEYS_GAIN, frames)
+                        PolyPart.BASS -> bass += SampleVoice(s, s.bass, action.midi, action.velocity, sampleRate, B.BASS_GAIN, frames)
+                    }
+                    return
+                }
                 when (action.part) {
                     PolyPart.BRASS -> brass += BrassVoice(sampleRate, action.midi, action.velocity * F.BRASS_GAIN, frames)
                     PolyPart.BASS -> bass += BassVoice2(sampleRate, action.midi, action.velocity * F.BASS_GAIN, frames)
@@ -250,6 +268,11 @@ class FusionSynth(private val sampleRate: Int = C.SAMPLE_RATE, noiseSeed: Int = 
     }
 
     private fun addDrum(d: DrumHit) {
+        val s = sounds
+        if (s != null) {
+            addSampledDrum(s, d)
+            return
+        }
         val v = d.velocity
         val seed = noiseSeed++
         when (d.kind) {
@@ -278,6 +301,35 @@ class FusionSynth(private val sampleRate: Int = C.SAMPLE_RATE, noiseSeed: Int = 
             DrumKind.CRASH -> drums += NoiseVoice(
                 sampleRate, false, FilterType.HIGHPASS, F.CRASH_HIGHPASS_HZ, F.CRASH_DECAY_SEC, v * F.CRASH_GAIN, seed,
             )
+        }
+    }
+
+    /** 生音のドラム：General MIDI の鍵盤で鳴らす。ハイハットは開けたものを閉じたもので止める */
+    private fun addSampledDrum(s: BandSounds, d: DrumHit) {
+        val key = when (d.kind) {
+            DrumKind.KICK -> B.KICK_KEY
+            DrumKind.SNARE -> B.SNARE_KEY
+            DrumKind.HAT -> B.HAT_KEY
+            DrumKind.OPEN_HAT -> B.OPEN_HAT_KEY
+            DrumKind.TOM_HIGH -> B.TOM_HIGH_KEY
+            DrumKind.TOM_MID -> B.TOM_MID_KEY
+            DrumKind.TOM_LOW -> B.TOM_LOW_KEY
+            DrumKind.CRASH -> B.CRASH_KEY
+        }
+        val hat = d.kind == DrumKind.HAT || d.kind == DrumKind.OPEN_HAT
+        val gain = when (d.kind) {
+            DrumKind.KICK -> B.KICK_GAIN
+            DrumKind.SNARE -> B.SNARE_GAIN
+            DrumKind.HAT, DrumKind.OPEN_HAT -> B.HAT_GAIN
+            DrumKind.CRASH -> B.CRASH_GAIN
+            else -> B.TOM_GAIN
+        }
+        val v = SampleVoice(s, s.drums, key, d.velocity, sampleRate, gain, Long.MAX_VALUE, d.pitchFactor)
+        if (hat) {
+            if (d.kind == DrumKind.HAT) hats.forEach { it.release() }
+            hats += v
+        } else {
+            drums += v
         }
     }
 

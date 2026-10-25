@@ -141,6 +141,11 @@ fun SettingsScreen(onBack: () -> Unit) {
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Text(
+                    "生音フュージョンの音源：GeneralUser GS v2.0.3（S. Christian Collins）",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
                     "地図：© OpenStreetMap contributors",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -258,6 +263,7 @@ private fun formatDistance(m: Double): String = if (m < 1000) "${m.toInt()}m" el
 private fun styleDescription(style: MusicStyle) = when (style) {
     MusicStyle.HEALING -> "パッドとベルの穏やかなインストゥルメンタル"
     MusicStyle.FUSION -> "明るいバンド編成のフュージョン。移動の速さで盛り上がりが変わる"
+    MusicStyle.BAND -> "フュージョンを生楽器（アルトサックス・エレピ・ベース・ドラム）で"
 }
 
 @Composable

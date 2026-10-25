@@ -1,9 +1,14 @@
 package jp.fmt.ekifu.engine
 
+import jp.fmt.ekifu.engine.dsp.BandSounds
+import jp.fmt.ekifu.engine.sf2.SampleBank
+
 /** 曲調（SPEC 12章） */
 enum class MusicStyle(val label: String) {
     HEALING("癒し"),
     FUSION("フュージョン"),
+    /** 作曲はフュージョンのまま、音だけサウンドフォントの生楽器（音源が読めなければシンセの音で鳴らす） */
+    BAND("生音フュージョン"),
 }
 
 /**
@@ -27,10 +32,23 @@ data class CarryOver(
 /** 曲調ごとのエンジンを作る */
 object StyleEngines {
 
+    /**
+     * 生音フュージョンの音源を読む関数（アプリが assets から読む）。最初に使うときに一度だけ読む。
+     * 読めなければ（null・失敗）シンセの音で鳴らす
+     */
+    @Volatile var bandBankLoader: (() -> SampleBank?)? = null
+
+    private val bandSounds: BandSounds? by lazy {
+        runCatching { bandBankLoader?.invoke()?.let { BandSounds(it) } }.getOrNull()
+    }
+
+    /** 生音フュージョンの楽器が使えるか（音源が読めたか） */
+    val bandAvailable: Boolean get() = bandSounds != null
+
     /** デモ再生のシード（曲調ごと。切り替えても同じ台本の続きを同じ曲で鳴らす） */
     fun demoSeed(style: MusicStyle): Int = when (style) {
         MusicStyle.HEALING -> MusicConstants.DEMO_SEED
-        MusicStyle.FUSION -> FusionConstants.DEMO_SEED
+        MusicStyle.FUSION, MusicStyle.BAND -> FusionConstants.DEMO_SEED
     }
 
     /** デモ再生（台本は曲調によらず同じ）。scriptStartSec から続きを鳴らす */
@@ -63,6 +81,9 @@ object StyleEngines {
                 scriptStartSec,
             )
             MusicStyle.FUSION -> FusionEngine(seed, FusionComposerConfig(interludeEverySec = interlude), script, sampleRate, scriptStartSec)
+            MusicStyle.BAND -> FusionEngine(
+                seed, FusionComposerConfig(interludeEverySec = interlude), script, sampleRate, scriptStartSec, bandSounds,
+            )
         }
         val state = carry ?: if (demo && scriptStartSec > 0) DemoScript.COMMUTE.carryOverAt(scriptStartSec) else null
         state?.let { s -> engine.apply { s.applyTo(it) } }

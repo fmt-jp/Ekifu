@@ -18,6 +18,7 @@ import jp.fmt.ekifu.engine.SoundEngine
 import jp.fmt.ekifu.engine.StreamStatus
 import jp.fmt.ekifu.engine.applyPlaceEvents
 import jp.fmt.ekifu.engine.StyleEngines
+import jp.fmt.ekifu.engine.sf2.SampleBank
 import jp.fmt.ekifu.location.SceneSource
 import jp.fmt.ekifu.settings.AppSettings
 import kotlinx.coroutines.CoroutineScope
@@ -70,6 +71,9 @@ class EkifuPlayer(context: Context) : SimpleBasePlayer(Looper.getMainLooper()) {
     init {
         // メディアボタンから画面を開かずに始まることもあるので、ここでも読み込む
         AppSettings.load(appContext)
+        // 生音フュージョンの音源（約2MB）は、使う前に裏で読んでおく
+        StyleEngines.bandBankLoader = { appContext.assets.open(BAND_ASSET).use { SampleBank.read(it) } }
+        Thread({ StyleEngines.bandAvailable }, "ekifu-bank").start()
         style = AppSettings.style.value
         subtitle = defaultSubtitle()
         postedSubtitle = subtitle
@@ -344,6 +348,7 @@ class EkifuPlayer(context: Context) : SimpleBasePlayer(Looper.getMainLooper()) {
 
     private companion object {
         const val TITLE = "ekifu"
+        const val BAND_ASSET = "band.ekb"
         const val MEDIA_ID = "ekifu"
         const val SUBTITLE_OMAKASE = "おまかせ再生中"
         const val SUBTITLE_DEMO = "デモ再生中"
