@@ -38,7 +38,8 @@ object BandConstants {
     )
 
     /** パートごとの音量（シンセ版の BRASS_GAIN などにあたる。シンセ版と同じくらいの大きさにそろえた） */
-    val LEAD_GAIN = db(2.0)
+    /** サックスは中音域が耳につきやすいので、シンセ版のリードより6dB下げる（実機で大きすぎたため） */
+    val LEAD_GAIN = db(-4.0)
     val KEYS_GAIN = db(-3.0)
     val BASS_GAIN = db(-1.0)
     val KICK_GAIN = db(-4.0)
