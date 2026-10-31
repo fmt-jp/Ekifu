@@ -79,10 +79,37 @@ interface PlaceDao {
     suspend fun delete(id: String)
 }
 
-@Database(entities = [Visit::class, PlaceEntity::class], version = 2, exportSchema = false)
+/**
+ * 地点ごとに覚えた携帯の基地局（地下の駅など、位置が取れない場所で登録地点を見分けるため）。
+ * 保存するのは基地局の番号と回数だけで、外部に送らない
+ */
+@Entity(tableName = "place_cells", primaryKeys = ["placeId", "cellKey"])
+data class PlaceCell(
+    val placeId: String,
+    val cellKey: String,
+    val count: Int,
+)
+
+@Dao
+interface PlaceCellDao {
+    @Query("SELECT * FROM place_cells")
+    fun observeAll(): Flow<List<PlaceCell>>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIgnore(cell: PlaceCell)
+
+    @Query("UPDATE place_cells SET count = count + 1 WHERE placeId = :placeId AND cellKey = :cellKey")
+    suspend fun increment(placeId: String, cellKey: String)
+
+    @Query("DELETE FROM place_cells WHERE placeId = :placeId")
+    suspend fun forget(placeId: String)
+}
+
+@Database(entities = [Visit::class, PlaceEntity::class, PlaceCell::class], version = 3, exportSchema = false)
 abstract class EkifuDatabase : RoomDatabase() {
     abstract fun visits(): VisitDao
     abstract fun places(): PlaceDao
+    abstract fun placeCells(): PlaceCellDao
 
     companion object {
         @Volatile private var instance: EkifuDatabase? = null
@@ -90,7 +117,7 @@ abstract class EkifuDatabase : RoomDatabase() {
         fun get(context: Context): EkifuDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(context.applicationContext, EkifuDatabase::class.java, "ekifu.db")
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .build()
                     .also { instance = it }
             }
@@ -106,5 +133,23 @@ private val MIGRATION_1_2 = object : Migration(1, 2) {
                 "`arriveRadiusM` INTEGER NOT NULL, `mood` TEXT NOT NULL, `themeSeed` INTEGER NOT NULL, " +
                 "`createdAt` INTEGER NOT NULL, PRIMARY KEY(`id`))",
         )
+    }
+}
+
+/** 地点ごとに覚えた基地局を追加。登録地点と訪問履歴はそのまま残す */
+private val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `place_cells` (`placeId` TEXT NOT NULL, `cellKey` TEXT NOT NULL, " +
+                "`count` INTEGER NOT NULL, PRIMARY KEY(`placeId`, `cellKey`))",
+        )
+    }
+}
+
+/** 地点で見えている基地局を1回ぶん数える（初めてなら1件足す） */
+suspend fun PlaceCellDao.learn(placeId: String, keys: Collection<String>) {
+    for (k in keys) {
+        insertIgnore(PlaceCell(placeId, k, 0))
+        increment(placeId, k)
     }
 }

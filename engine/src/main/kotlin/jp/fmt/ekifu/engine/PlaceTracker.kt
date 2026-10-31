@@ -66,6 +66,9 @@ class PlaceTracker(places: List<RegisteredPlace> = emptyList()) {
     private val leftAtMs = HashMap<String, Long>()
     /** 到着中に内側の円から離れた時刻 */
     private val leftInnerAtMs = HashMap<String, Long>()
+    /** 位置なしで（基地局・「着いた」ボタンで）到着した。位置が届くまでは基地局が見えなくなったら離れる */
+    private var arrivedWithoutFix = false
+    private var lastCellMatchMs = 0L
 
     /**
      * 曲調を切り替えるときに新しいエンジンへ引き継ぐ状態（12.12）。
@@ -97,6 +100,8 @@ class PlaceTracker(places: List<RegisteredPlace> = emptyList()) {
     fun update(fix: LocationFix): List<PlaceEvent> {
         val isFirst = first
         first = false
+        // 位置が届いたら、これまでどおり距離で判定する
+        arrivedWithoutFix = false
         val events = ArrayList<PlaceEvent>(2)
         val cur = current
 
@@ -119,7 +124,7 @@ class PlaceTracker(places: List<RegisteredPlace> = emptyList()) {
                 state = State.NONE
                 silent = false
             } else if (state != State.ARRIVED && inInner(cur, fix)) {
-                arrive(cur, events, fix)
+                arrive(cur, events, fix.timeMs)
                 return events
             }
         }
@@ -137,7 +142,7 @@ class PlaceTracker(places: List<RegisteredPlace> = emptyList()) {
                     silent = false
                     events += PlaceEvent.StayAtStart(inner)
                 } else {
-                    arrive(inner, events, fix)
+                    arrive(inner, events, fix.timeMs)
                 }
                 return events
             }
@@ -159,12 +164,100 @@ class PlaceTracker(places: List<RegisteredPlace> = emptyList()) {
         return events
     }
 
-    private fun arrive(p: RegisteredPlace, events: MutableList<PlaceEvent>, fix: LocationFix) {
+    private fun arrive(p: RegisteredPlace, events: MutableList<PlaceEvent>, timeMs: Long) {
         current = p
         state = State.ARRIVED
         silent = false
         val left = leftInnerAtMs[p.id]
-        events += if (left != null && fix.timeMs - left < P.REAPPROACH_SUPPRESS_MS) PlaceEvent.Return(p) else PlaceEvent.Arrive(p)
+        events += if (left != null && timeMs - left < P.REAPPROACH_SUPPRESS_MS) PlaceEvent.Return(p) else PlaceEvent.Arrive(p)
+    }
+
+    /**
+     * 位置が取れないあいだ（地下の駅など）、基地局で分かった地点 placeId に到着したとみなす。
+     * placeId が null（どの地点の基地局でもない）のまま [P.CELL_LEAVE_SEC] たったら、基地局で到着していた地点から離れる
+     */
+    fun updateByCell(placeId: String?, nowMs: Long): List<PlaceEvent> {
+        val events = ArrayList<PlaceEvent>(2)
+        val cur = current
+        if (placeId == null) {
+            if (cur != null && state == State.ARRIVED && arrivedWithoutFix &&
+                nowMs - lastCellMatchMs > (P.CELL_LEAVE_SEC * 1000).toLong()
+            ) {
+                events += PlaceEvent.Leave(cur)
+                leaveNow(cur, nowMs)
+            }
+            return events
+        }
+        val p = places.firstOrNull { it.id == placeId } ?: return events
+        lastCellMatchMs = nowMs
+        if (cur?.id == p.id && state == State.ARRIVED) return events
+        // 別の地点に到着していたら離れる（音は新しい地点の演出だけ。applyPlaceEvents が決める）
+        if (cur != null && state == State.ARRIVED) {
+            events += PlaceEvent.Leave(cur)
+            leaveNow(cur, nowMs)
+        }
+        if (first) {
+            // 再生を始めたときにすでにその場所にいた：演出なしで滞在
+            first = false
+            current = p
+            state = State.ARRIVED
+            silent = false
+            events += PlaceEvent.StayAtStart(p)
+        } else {
+            arrive(p, events, nowMs)
+        }
+        arrivedWithoutFix = true
+        return events
+    }
+
+    /**
+     * 到着中の地点の内側の円に、精度のよい位置（誤差が内側の円の半径以下）で入っているか。
+     * 基地局を覚えるのはこのときだけ（トンネルなど地点の外の基地局を覚えないため）
+     */
+    fun confirmedInside(fix: LocationFix): RegisteredPlace? {
+        val cur = current ?: return null
+        if (state != State.ARRIVED) return null
+        val acc = fix.accuracyM ?: return null
+        return cur.takeIf { acc <= it.arriveRadiusM && distance(it, fix) <= it.arriveRadiusM }
+    }
+
+    /**
+     * 「着いた」ボタンでどの地点に着いたことにするか：基地局で分かればその地点、
+     * 分からなければ最後の位置から [P.MANUAL_ARRIVE_MAX_M] 以内で一番近い地点
+     */
+    fun manualTarget(cellPlaceId: String?, lastFix: LocationFix?): RegisteredPlace? {
+        places.firstOrNull { it.id == cellPlaceId }?.let { return it }
+        val fix = lastFix ?: return null
+        return nearest(fix)?.takeIf { it.second <= P.MANUAL_ARRIVE_MAX_M }?.first
+    }
+
+    /** 「着いた」ボタン：位置によらず placeId に到着する（すでに到着していれば何もしない） */
+    fun forceArrive(placeId: String, nowMs: Long): List<PlaceEvent> {
+        val p = places.firstOrNull { it.id == placeId } ?: return emptyList()
+        val cur = current
+        if (cur?.id == p.id && state == State.ARRIVED) return emptyList()
+        val events = ArrayList<PlaceEvent>(2)
+        if (cur != null && state == State.ARRIVED) {
+            events += PlaceEvent.Leave(cur)
+            leaveNow(cur, nowMs)
+        }
+        first = false
+        current = p
+        state = State.ARRIVED
+        silent = false
+        events += PlaceEvent.Arrive(p)
+        arrivedWithoutFix = true
+        lastCellMatchMs = nowMs
+        return events
+    }
+
+    private fun leaveNow(p: RegisteredPlace, nowMs: Long) {
+        leftAtMs[p.id] = nowMs
+        if (state == State.ARRIVED) leftInnerAtMs[p.id] = nowMs
+        current = null
+        state = State.NONE
+        silent = false
+        arrivedWithoutFix = false
     }
 
     /** 一番近い登録地点とその距離（画面表示用） */

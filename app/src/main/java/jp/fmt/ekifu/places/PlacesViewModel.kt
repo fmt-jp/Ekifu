@@ -13,6 +13,7 @@ import kotlinx.coroutines.launch
 class PlacesViewModel(app: Application) : AndroidViewModel(app) {
 
     private val dao = EkifuDatabase.get(app).places()
+    private val cells = EkifuDatabase.get(app).placeCells()
 
     val places: StateFlow<List<PlaceEntity>> =
         dao.observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -22,6 +23,9 @@ class PlacesViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun delete(id: String) {
-        viewModelScope.launch { dao.delete(id) }
+        viewModelScope.launch {
+            dao.delete(id)
+            cells.forget(id)
+        }
     }
 }

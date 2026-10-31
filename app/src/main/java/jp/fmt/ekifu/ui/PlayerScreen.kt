@@ -61,6 +61,7 @@ fun PlayerScreen(
     onResume: () -> Unit,
     onPause: () -> Unit,
     onStop: () -> Unit,
+    onArrived: () -> Unit,
     onOpenPlaces: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
@@ -130,6 +131,11 @@ fun PlayerScreen(
                 shape = RoundedCornerShape(28.dp),
                 modifier = Modifier.weight(1f).height(64.dp),
             ) { Text("停止", fontSize = 18.sp) }
+        }
+
+        // 地下の駅など位置が取れない場所で、着いたことを知らせる（そのとき見えている基地局を覚える）
+        if (ui.mode == PlaybackMode.OMAKASE && ui.state == PlaybackBus.State.PLAYING && ui.scene?.hasPermission == true) {
+            OutlinedButton(onClick = onArrived, modifier = Modifier.fillMaxWidth()) { Text("着いた（位置が取れないとき）") }
         }
 
         if (debugVisible) {
@@ -319,6 +325,20 @@ private fun DebugCard(ui: PlaybackBus.Ui, stream: StreamStatus, status: EngineSt
                     sc.locationIntervalSec?.let {
                         (if (it < 60) "${it}秒" else "${it / 60}分") + if (sc.highAccuracy) "（GPS）" else ""
                     } ?: "—",
+                )
+            }
+            ui.scene?.let { sc ->
+                DebugRow(
+                    "基地局",
+                    when {
+                        !sc.cellAvailable -> "読めない（許可・SIM）"
+                        sc.cellKey == null -> "—"
+                        else -> sc.cellKey.substringAfterLast(':') + (sc.cellPlaceName?.let { "（${it}）" } ?: "")
+                    },
+                )
+                DebugRow(
+                    "GPS のきっかけ",
+                    listOfNotNull("距離".takeIf { sc.nearByDistance }, "基地局".takeIf { sc.nearByCell }).joinToString("・").ifEmpty { "—" },
                 )
             }
             // 接近・到着・離れるの演出が鳴り始めた再生時刻

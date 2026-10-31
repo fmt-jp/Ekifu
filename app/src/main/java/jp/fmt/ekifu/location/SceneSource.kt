@@ -15,7 +15,11 @@ import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
 import jp.fmt.ekifu.data.EkifuDatabase
 import jp.fmt.ekifu.data.Visit
+import jp.fmt.ekifu.data.learn
 import jp.fmt.ekifu.engine.CarryOver
+import jp.fmt.ekifu.engine.CellBook
+import jp.fmt.ekifu.engine.CellSnapshot
+import jp.fmt.ekifu.engine.PlaceConstants
 import jp.fmt.ekifu.engine.Geo
 import jp.fmt.ekifu.engine.LocationFix
 import jp.fmt.ekifu.engine.MusicConstants
@@ -64,6 +68,13 @@ data class SceneUi(
     val locationIntervalSec: Int? = null,
     /** 高精度（GPS）で取っているか */
     val highAccuracy: Boolean = false,
+    /** つながっている基地局（読めないときは null）と、それで分かる登録地点 */
+    val cellKey: String? = null,
+    val cellPlaceName: String? = null,
+    val cellAvailable: Boolean = false,
+    /** GPS を入れたきっかけ：登録地点からの距離／その地点で覚えた基地局 */
+    val nearByDistance: Boolean = false,
+    val nearByCell: Boolean = false,
 )
 
 /**
@@ -99,6 +110,13 @@ class SceneSource(
     private var appliedScene: Scene? = null
     private var appliedAtMs = 0L
 
+    /** 地点ごとに覚えた基地局（地下の駅で登録地点を見分ける。地上では GPS を入れるきっかけ） */
+    private val cellReader = CellReader(appContext)
+    private val cellBook = CellBook()
+    private var cellJob: Job? = null
+    private var lastCells: CellSnapshot? = null
+    private var cellPlaceId: String? = null
+
     private val callback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
             result.lastLocation?.let { onFix(it.toFix()) }
@@ -110,6 +128,12 @@ class SceneSource(
             // 登録・編集・削除は再生中でもすぐ判定に反映する
             placesJob = scope.launch {
                 db.places().observeAll().collect { list -> tracker.setPlaces(list.map { it.toRegistered() }) }
+            }
+            scope.launch {
+                db.placeCells().observeAll().collect { list ->
+                    cellBook.clear()
+                    list.forEach { cellBook.put(it.placeId, it.cellKey, it.count) }
+                }
             }
             // 設定で位置の取り方を変えたら、再生中ならすぐ取り直す
             scope.launch {
@@ -146,10 +170,14 @@ class SceneSource(
      * 登録地点の1.5km以内（乗り物のあいだは3km以内）は GPS で15秒ごと（到着したあとは省電力で1分ごと）、
      * 乗り物のあいだは1分ごと、それ以外は5分ごと
      */
-    private fun adjustInterval(fix: LocationFix) {
-        // 設定の位置の取り方（既定は標準：乗り物のあいだは3km以内、歩き・静止は1.5km以内を「近く」とする）
+    private fun adjustInterval(fix: LocationFix?) {
+        // 設定の位置の取り方（既定は標準：乗り物のあいだは3km以内、歩き・静止は1.5km以内を「近く」とする）。
+        // その地点で覚えた基地局が見えているときも「近く」として GPS を入れる
         val policy = AppSettings.locationPolicy.value
-        val near = tracker.isNear(fix, SceneTiming.nearDistanceM(currentSpeed(), policy))
+        val byDistance = fix != null && tracker.isNear(fix, SceneTiming.nearDistanceM(currentSpeed(), policy))
+        val byCell = cellPlaceId != null
+        ui = ui.copy(nearByDistance = byDistance, nearByCell = byCell)
+        val near = byDistance || byCell
         val arrived = tracker.state == PlaceTracker.State.ARRIVED
         val wanted = (SceneTiming.locationIntervalSec(near, currentSpeed(), arrived, policy) * 1000).toLong()
         val high = SceneTiming.highAccuracy(near, arrived, policy)
@@ -182,6 +210,15 @@ class SceneSource(
                     SceneTiming.highAccuracy(false, policy = policy),
                 )
                 currentFix()?.let { onFix(it) }
+                if (cellReader.available) {
+                    cellJob?.cancel()
+                    cellJob = scope.launch {
+                        while (isActive) {
+                            checkCells()
+                            delay(cellCheckMs)
+                        }
+                    }
+                }
                 while (isActive) {
                     decide()
                     // 位置の取得間隔に合わせて確かめる（標準は歩き5分・乗り物1分）
@@ -209,6 +246,8 @@ class SceneSource(
     fun pause() {
         ticker?.cancel()
         ticker = null
+        cellJob?.cancel()
+        cellJob = null
         fused.removeLocationUpdates(callback)
         this.intervalMs = 0
         highAccuracy = false
@@ -220,6 +259,70 @@ class SceneSource(
         pause()
         placesJob?.cancel()
         scope.cancel()
+        cellReader.release()
+    }
+
+    /**
+     * 基地局を読む（15秒ごと）。
+     * - GPS で到着していて精度のよい位置が内側の円の中なら、見えている基地局をその地点のものとして覚える
+     * - 位置が取れていないとき（地下など）は、覚えた基地局で到着・離れるを判定する
+     * - 覚えた基地局が見えたら、GPS を入れるきっかけにする
+     */
+    private suspend fun checkCells() {
+        val snap = cellReader.read() ?: return
+        lastCells = snap
+        val now = System.currentTimeMillis()
+        val fix = latest
+        val ids = tracker.places.map { it.id }.toSet()
+        cellPlaceId = cellBook.placeFor(snap.serving, ids)
+        if (fix != null && now - fix.timeMs < LEARN_FIX_MAX_AGE_MS) {
+            tracker.confirmedInside(fix)?.let { learnCells(it.id, snap) }
+        }
+        if (SceneTiming.locationStale(fix?.timeMs, now, intervalMs / 1000.0)) {
+            val events = tracker.updateByCell(cellPlaceId, now)
+            if (events.isNotEmpty()) onPlaceEvents(events)
+        }
+        ui = ui.copy(
+            cellAvailable = true,
+            cellKey = snap.serving.firstOrNull(),
+            cellPlaceName = tracker.places.firstOrNull { it.id == cellPlaceId }?.name,
+            trackedName = tracker.current?.name,
+            trackedState = tracker.state,
+            trackedSilent = tracker.isSilent,
+        )
+        adjustInterval(fix)
+        onUi(ui)
+    }
+
+    private fun learnCells(placeId: String, snap: CellSnapshot) {
+        val keys = snap.all
+        if (keys.isEmpty()) return
+        cellBook.learn(placeId, keys)
+        scope.launch(Dispatchers.IO) { db.placeCells().learn(placeId, keys) }
+    }
+
+    /**
+     * 「着いた」ボタン：基地局で分かる地点か、最後の位置から3km以内で一番近い地点に到着し、
+     * いま見えている基地局をその地点のものとして覚える。着いた地点の名前（分からなければ null）を返す
+     */
+    fun manualArrive(onResult: (String?) -> Unit) {
+        scope.launch {
+            val snap = cellReader.read() ?: lastCells
+            val now = System.currentTimeMillis()
+            val cellPlace = snap?.let { cellBook.placeFor(it.serving, tracker.places.map { p -> p.id }.toSet()) }
+            val target = tracker.manualTarget(cellPlace, latest)
+            if (target == null) {
+                onResult(null)
+                return@launch
+            }
+            val events = tracker.forceArrive(target.id, now)
+            if (events.isNotEmpty()) onPlaceEvents(events)
+            snap?.let { learnCells(target.id, it) }
+            ui = ui.copy(trackedName = tracker.current?.name, trackedState = tracker.state, trackedSilent = tracker.isSilent)
+            adjustInterval(latest)
+            onUi(ui)
+            onResult(target.name)
+        }
     }
 
     private suspend fun decide() {
@@ -291,6 +394,9 @@ class SceneSource(
         /** 再生・再開時に最初の位置を待つ上限 */
         private const val FIRST_FIX_TIMEOUT_MS = 20_000L
         private val sceneIntervalMs = (MusicConstants.SCENE_INTERVAL_SEC * 1000).toLong()
+        private val cellCheckMs = (PlaceConstants.CELL_CHECK_SEC * 1000).toLong()
+        /** 基地局を覚えるのは、この時間より新しい位置で内側の円の中と分かったときだけ */
+        private const val LEARN_FIX_MAX_AGE_MS = 30_000L
 
         fun hasLocationPermission(context: Context): Boolean =
             listOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION).any {

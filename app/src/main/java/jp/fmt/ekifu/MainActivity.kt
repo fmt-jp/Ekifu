@@ -26,6 +26,7 @@ import jp.fmt.ekifu.places.PlacesViewModel
 import jp.fmt.ekifu.settings.AppSettings
 import jp.fmt.ekifu.settings.SettingsScreen
 import jp.fmt.ekifu.playback.PlaybackBus
+import jp.fmt.ekifu.playback.PlaybackCommands
 import jp.fmt.ekifu.playback.PlaybackMode
 import jp.fmt.ekifu.playback.PlaybackService
 import jp.fmt.ekifu.ui.EkifuTheme
@@ -55,6 +56,7 @@ class MainActivity : ComponentActivity() {
                         onResume = { controller?.play() },
                         onPause = { controller?.pause() },
                         onStop = { controller?.stop() },
+                        onArrived = { controller?.sendCustomCommand(PlaybackCommands.ARRIVED, Bundle.EMPTY) },
                         onOpenPlaces = { screen = SCREEN_PLACES },
                         onOpenSettings = { screen = SCREEN_SETTINGS },
                     )

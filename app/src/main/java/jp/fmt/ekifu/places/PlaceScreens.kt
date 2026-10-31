@@ -30,6 +30,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -45,11 +46,16 @@ import androidx.compose.ui.unit.dp
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
+import jp.fmt.ekifu.data.EkifuDatabase
 import jp.fmt.ekifu.data.PlaceEntity
+import jp.fmt.ekifu.data.learn
+import jp.fmt.ekifu.location.CellReader
 import jp.fmt.ekifu.engine.Mood
 import jp.fmt.ekifu.engine.PlaceConstants as P
 import jp.fmt.ekifu.location.SceneSource
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 import org.osmdroid.util.GeoPoint
@@ -273,12 +279,57 @@ fun PlaceEditScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+        if (existing != null) CellLearnSection(existing.id)
         if (existing != null) {
             TextButton(onClick = { onDelete(existing.id) }, modifier = Modifier.fillMaxWidth()) {
                 Text("この地点を削除", color = MaterialTheme.colorScheme.tertiary)
             }
         }
     }
+}
+
+/**
+ * 地下の駅など位置が取れない場所のために、いまここで見えている携帯の基地局をこの地点のものとして覚える。
+ * 再生中に GPS で到着したときや「着いた」ボタンを押したときにも自動で覚える
+ */
+@Composable
+private fun CellLearnSection(placeId: String) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val dao = remember { EkifuDatabase.get(context).placeCells() }
+    val cells by remember { dao.observeAll() }.collectAsState(initial = emptyList())
+    val count = cells.count { it.placeId == placeId }
+    var note by remember { mutableStateOf<String?>(null) }
+    Text("基地局（地下で見分ける）", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+    Text(
+        "覚えた基地局：$count。地下のホームなど位置が取れない場所で押すと、次からその場所で自動で到着になります。",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedButton(onClick = {
+            scope.launch {
+                val reader = CellReader(context)
+                val snap = reader.read()
+                reader.release()
+                note = if (snap == null || snap.all.isEmpty()) {
+                    "基地局を読めませんでした（「正確な位置」の許可と SIM が必要です）"
+                } else {
+                    withContext(Dispatchers.IO) { dao.learn(placeId, snap.all) }
+                    "${snap.all.size}個の基地局を覚えました"
+                }
+            }
+        }) { Text("ここで基地局を覚える") }
+        if (count > 0) {
+            TextButton(onClick = {
+                scope.launch {
+                    withContext(Dispatchers.IO) { dao.forget(placeId) }
+                    note = "覚えた基地局を消しました"
+                }
+            }) { Text("忘れる") }
+        }
+    }
+    note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
 }
 
 @Composable

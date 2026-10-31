@@ -17,6 +17,10 @@ import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaNotification
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionResult
+import com.google.common.util.concurrent.Futures
+import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.collect.ImmutableList
 import jp.fmt.ekifu.MainActivity
 import jp.fmt.ekifu.R
@@ -52,8 +56,16 @@ class PlaybackService : MediaSessionService() {
             Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
+        // 通知・ロック画面に「着いた」ボタンを出す
+        val arrived = CommandButton.Builder()
+            .setDisplayName(getString(R.string.arrived_button))
+            .setIconResId(R.drawable.ic_arrived)
+            .setSessionCommand(PlaybackCommands.ARRIVED)
+            .build()
         session = MediaSession.Builder(this, p)
             .setSessionActivity(openApp)
+            .setCallback(SessionCallback())
+            .setCustomLayout(ImmutableList.of(arrived))
             .build()
         notifications = CapturingNotificationProvider(
             DefaultMediaNotificationProvider.Builder(this).build().also {
@@ -66,6 +78,31 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
+
+    /** 「着いた」ボタンを使えるようにし、押されたら EkifuPlayer に渡す */
+    private inner class SessionCallback : MediaSession.Callback {
+        override fun onConnect(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+        ): MediaSession.ConnectionResult {
+            val commands = MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon()
+                .add(PlaybackCommands.ARRIVED)
+                .build()
+            return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                .setAvailableSessionCommands(commands)
+                .build()
+        }
+
+        override fun onCustomCommand(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            customCommand: SessionCommand,
+            args: Bundle,
+        ): ListenableFuture<SessionResult> {
+            if (customCommand.customAction == PlaybackCommands.ARRIVED_ACTION) player?.markArrived()
+            return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+        }
+    }
 
     override fun onUpdateNotification(session: MediaSession, startInForegroundRequired: Boolean) {
         super.onUpdateNotification(session, startInForegroundRequired)

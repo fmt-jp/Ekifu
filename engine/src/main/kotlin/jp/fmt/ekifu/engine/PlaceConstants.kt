@@ -35,6 +35,15 @@ object PlaceConstants {
      * （ユーザーと決めたこと：省電力の精度では電車内で数百mずれ、内側の円に入れなかったため）
      */
     const val NEAR_LOCATION_INTERVAL_SEC = 15.0
+    /** 基地局で到着したあと、その地点の基地局がこれだけ見えなければ離れる（仕様外・要調整） */
+    const val CELL_LEAVE_SEC = 90.0
+    /** 位置がこれより長く届かなければ「取れていない」とみなし、基地局で判定する（頼んだ間隔の2倍と比べて長いほう。仕様外・要調整） */
+    const val CELL_FALLBACK_MIN_SEC = 45.0
+    /** 基地局を読む間隔（仕様外・要調整） */
+    const val CELL_CHECK_SEC = 15.0
+    /** 「着いた」ボタン：基地局で分からないときは、最後の位置からこの距離以内で一番近い地点 */
+    const val MANUAL_ARRIVE_MAX_M = 3000.0
+
     /** 到着したあと（内側の円の中）は省電力の精度でこの間隔にする（ユーザーと決めたこと：到着後は GPS を控える） */
     const val ARRIVED_LOCATION_INTERVAL_SEC = 60.0
 

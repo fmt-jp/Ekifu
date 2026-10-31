@@ -119,6 +119,13 @@ object SceneTiming {
         }
     }
 
+    /**
+     * 位置が取れていないか（地下など）。頼んだ間隔の2倍（最低45秒）より長く届いていなければ取れていないとみなし、
+     * 基地局で登録地点を判定する
+     */
+    fun locationStale(lastFixMs: Long?, nowMs: Long, intervalSec: Double): Boolean =
+        lastFixMs == null || nowMs - lastFixMs > maxOf(2 * intervalSec, PlaceConstants.CELL_FALLBACK_MIN_SEC) * 1000
+
     /** 新しく決めた場面に切り替えるか。current はいま鳴っている場面、sinceSwitchSec はその場面にしてからの時間 */
     fun shouldSwitch(current: Scene?, next: Scene, sinceSwitchSec: Double): Boolean =
         current == null ||

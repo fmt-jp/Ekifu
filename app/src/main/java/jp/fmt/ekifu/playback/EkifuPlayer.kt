@@ -80,6 +80,23 @@ class EkifuPlayer(context: Context) : SimpleBasePlayer(Looper.getMainLooper()) {
         scope.launch { AppSettings.style.drop(1).collect { onStyleChanged(it) } }
     }
 
+    /**
+     * 「着いた」ボタン（通知・再生画面）：位置が取れない地下の駅などで、近くの登録地点に到着したことにする。
+     * そのとき見えている基地局を覚えるので、次からは同じ場所で自動で到着になる
+     */
+    fun markArrived() {
+        val src = scenes
+        if (src == null || ending || !playWhenReady) {
+            toast(ARRIVE_NOT_PLAYING)
+            return
+        }
+        src.manualArrive { name -> toast(if (name != null) "${name}に着きました" else ARRIVE_UNKNOWN) }
+    }
+
+    private fun toast(text: String) {
+        android.widget.Toast.makeText(appContext, text, android.widget.Toast.LENGTH_SHORT).show()
+    }
+
     /** 位置を使って再生中か（フォアグラウンドサービスに location 種別を付けるかどうか） */
     val usesLocation: Boolean
         get() = playWhenReady && !ending && scenes?.hasPermission == true
@@ -349,6 +366,8 @@ class EkifuPlayer(context: Context) : SimpleBasePlayer(Looper.getMainLooper()) {
     private companion object {
         const val TITLE = "ekifu"
         const val BAND_ASSET = "band.ekb"
+        const val ARRIVE_NOT_PLAYING = "おまかせ再生中に使えます"
+        const val ARRIVE_UNKNOWN = "近くの登録地点が分かりませんでした"
         const val MEDIA_ID = "ekifu"
         const val SUBTITLE_OMAKASE = "おまかせ再生中"
         const val SUBTITLE_DEMO = "デモ再生中"
