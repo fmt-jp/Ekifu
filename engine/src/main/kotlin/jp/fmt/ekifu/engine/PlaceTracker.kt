@@ -98,9 +98,11 @@ class PlaceTracker(places: List<RegisteredPlace> = emptyList()) {
     }
 
     fun update(fix: LocationFix): List<PlaceEvent> {
+        // 基地局・「着いた」ボタンで到着したあとは、粗い位置（地下で基地局から出した位置など）では判定しない。
+        // 精度のよい位置が届いたら、これまでどおり距離で判定する
+        if (arrivedWithoutFix && state == State.ARRIVED && SceneTiming.coarse(fix)) return emptyList()
         val isFirst = first
         first = false
-        // 位置が届いたら、これまでどおり距離で判定する
         arrivedWithoutFix = false
         val events = ArrayList<PlaceEvent>(2)
         val cur = current
@@ -172,29 +174,39 @@ class PlaceTracker(places: List<RegisteredPlace> = emptyList()) {
         events += if (left != null && timeMs - left < P.REAPPROACH_SUPPRESS_MS) PlaceEvent.Return(p) else PlaceEvent.Arrive(p)
     }
 
+    /** 位置なしで（基地局・「着いた」ボタンで）到着している */
+    val arrivedByCell: Boolean get() = arrivedWithoutFix && state == State.ARRIVED
+
     /**
-     * 位置が取れないあいだ（地下の駅など）、基地局で分かった地点 placeId に到着したとみなす。
-     * placeId が null（どの地点の基地局でもない）のまま [P.CELL_LEAVE_SEC] たったら、基地局で到着していた地点から離れる
+     * 基地局を読むたびに呼ぶ。placeId は基地局で分かった地点（分からなければ null）、
+     * locationStale は位置が取れていないか（[SceneTiming.locationStale]）。
+     * - 位置が取れていないあいだ（地下の駅など）、基地局で分かった地点に到着したとみなす
+     * - 位置なしで到着していたら、位置が届いていても基地局で離れる・次の地点へ移る
+     *   （その地点の基地局が [P.CELL_LEAVE_SEC] 見えなければ離れる）
      */
-    fun updateByCell(placeId: String?, nowMs: Long): List<PlaceEvent> {
+    fun updateByCell(placeId: String?, nowMs: Long, locationStale: Boolean = true): List<PlaceEvent> {
         val events = ArrayList<PlaceEvent>(2)
         val cur = current
-        if (placeId == null) {
-            if (cur != null && state == State.ARRIVED && arrivedWithoutFix &&
-                nowMs - lastCellMatchMs > (P.CELL_LEAVE_SEC * 1000).toLong()
-            ) {
+        val byCell = arrivedByCell
+        if (byCell && cur != null) {
+            if (placeId == cur.id) {
+                lastCellMatchMs = nowMs
+                return events
+            }
+            if (nowMs - lastCellMatchMs > (P.CELL_LEAVE_SEC * 1000).toLong()) {
                 events += PlaceEvent.Leave(cur)
                 leaveNow(cur, nowMs)
             }
-            return events
         }
+        if (placeId == null || !(locationStale || byCell)) return events
         val p = places.firstOrNull { it.id == placeId } ?: return events
         lastCellMatchMs = nowMs
-        if (cur?.id == p.id && state == State.ARRIVED) return events
+        val now = current
+        if (now?.id == p.id && state == State.ARRIVED) return events
         // 別の地点に到着していたら離れる（音は新しい地点の演出だけ。applyPlaceEvents が決める）
-        if (cur != null && state == State.ARRIVED) {
-            events += PlaceEvent.Leave(cur)
-            leaveNow(cur, nowMs)
+        if (now != null && state == State.ARRIVED) {
+            events += PlaceEvent.Leave(now)
+            leaveNow(now, nowMs)
         }
         if (first) {
             // 再生を始めたときにすでにその場所にいた：演出なしで滞在
@@ -231,13 +243,15 @@ class PlaceTracker(places: List<RegisteredPlace> = emptyList()) {
         return nearest(fix)?.takeIf { it.second <= P.MANUAL_ARRIVE_MAX_M }?.first
     }
 
-    /** 「着いた」ボタン：位置によらず placeId に到着する（すでに到着していれば何もしない） */
+    /**
+     * 「着いた」ボタン：位置によらず placeId に到着する。すでにその地点に到着していても、
+     * 押したことが分かるよう到着の演出を鳴らし直す（30分以内の再到着でも演出なしにしない）
+     */
     fun forceArrive(placeId: String, nowMs: Long): List<PlaceEvent> {
         val p = places.firstOrNull { it.id == placeId } ?: return emptyList()
         val cur = current
-        if (cur?.id == p.id && state == State.ARRIVED) return emptyList()
         val events = ArrayList<PlaceEvent>(2)
-        if (cur != null && state == State.ARRIVED) {
+        if (cur != null && cur.id != p.id && state == State.ARRIVED) {
             events += PlaceEvent.Leave(cur)
             leaveNow(cur, nowMs)
         }

@@ -121,10 +121,28 @@ object SceneTiming {
 
     /**
      * 位置が取れていないか（地下など）。頼んだ間隔の2倍（最低45秒）より長く届いていなければ取れていないとみなし、
-     * 基地局で登録地点を判定する
+     * 基地局で登録地点を判定する。
+     * GPS を頼んで45秒以上たつのに精度のよい位置（誤差150m以下）がそれだけ届いていないときも取れていないとみなす
+     * （地下では基地局・Wi-Fi から出した粗い位置だけが届き続けるため）。
+     * lastPreciseFixMs は最後に届いた精度のよい位置の時刻、gpsSinceMs は GPS を頼み始めた時刻（頼んでいなければ null）
      */
-    fun locationStale(lastFixMs: Long?, nowMs: Long, intervalSec: Double): Boolean =
-        lastFixMs == null || nowMs - lastFixMs > maxOf(2 * intervalSec, PlaceConstants.CELL_FALLBACK_MIN_SEC) * 1000
+    fun locationStale(
+        lastFixMs: Long?,
+        nowMs: Long,
+        intervalSec: Double,
+        lastPreciseFixMs: Long? = lastFixMs,
+        gpsSinceMs: Long? = null,
+    ): Boolean {
+        val limitMs = maxOf(2 * intervalSec, PlaceConstants.CELL_FALLBACK_MIN_SEC) * 1000
+        if (lastFixMs == null || nowMs - lastFixMs > limitMs) return true
+        if (gpsSinceMs != null && nowMs - gpsSinceMs >= PlaceConstants.CELL_FALLBACK_MIN_SEC * 1000) {
+            return lastPreciseFixMs == null || nowMs - lastPreciseFixMs > limitMs
+        }
+        return false
+    }
+
+    /** 粗い位置（誤差が [PlaceConstants.COARSE_FIX_M] より大きい）か。誤差が分からない位置は粗いとみなさない */
+    fun coarse(fix: LocationFix): Boolean = (fix.accuracyM ?: 0.0) > PlaceConstants.COARSE_FIX_M
 
     /** 新しく決めた場面に切り替えるか。current はいま鳴っている場面、sinceSwitchSec はその場面にしてからの時間 */
     fun shouldSwitch(current: Scene?, next: Scene, sinceSwitchSec: Double): Boolean =

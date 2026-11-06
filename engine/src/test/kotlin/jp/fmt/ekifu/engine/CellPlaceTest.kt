@@ -91,9 +91,62 @@ class CellPlaceTest {
         assertNull(t.manualTarget(null, at(10_000.0, 0.0)))
         assertNull(t.manualTarget(null, null))
         assertTrue(t.forceArrive("b", 1 * min).single() is PlaceEvent.Arrive)
-        assertTrue(t.forceArrive("b", 2 * min).isEmpty(), "同じ地点に2回は鳴らさない")
+        assertTrue(t.forceArrive("b", 2 * min).single() is PlaceEvent.Arrive, "すでに到着していても押したら鳴らし直す")
+        assertTrue(t.forceArrive("b", 2 * min + 30_000).single() is PlaceEvent.Arrive, "30分以内でも演出なしにしない")
         // 基地局が見えなくなって90秒で離れる
-        assertTrue(t.updateByCell(null, 4 * min).single() is PlaceEvent.Leave)
+        assertTrue(t.updateByCell(null, 5 * min).single() is PlaceEvent.Leave)
+    }
+
+    private fun coarseAt(northM: Double, tMin: Double, acc: Double = 800.0) =
+        LocationFix(lat0 + northM / 111_195.0, lng0, (tMin * min).toLong(), accuracyM = acc)
+
+    @Test
+    fun coarseFixesDoNotUndoACellOrManualArrival() {
+        val t = PlaceTracker(listOf(stationA, stationB))
+        t.update(at(5000.0, 0.0))
+        t.forceArrive("a", 10 * min)
+        // 地下で基地局から出した粗い位置（数百mずれる）が届いても離れない
+        assertTrue(t.update(coarseAt(1500.0, 10.2)).isEmpty())
+        assertTrue(t.update(coarseAt(2000.0, 10.5, acc = 1500.0)).isEmpty())
+        assertEquals("a", t.current?.id)
+        assertTrue(t.arrivedByCell)
+        // 位置が届いていても、基地局で到着したあいだは基地局が見えなくなって90秒で離れる
+        assertTrue(t.updateByCell(null, 11 * min, locationStale = false).isEmpty())
+        assertTrue(t.updateByCell(null, 12 * min, locationStale = false).single() is PlaceEvent.Leave)
+    }
+
+    @Test
+    fun aPreciseFixAfterCellArrivalCanLeave() {
+        val t = PlaceTracker(listOf(stationA))
+        t.update(at(5000.0, 0.0))
+        t.updateByCell("a", 10 * min)
+        assertTrue(t.update(coarseAt(400.0, 10.5, acc = 20.0)).single() is PlaceEvent.Leave)
+    }
+
+    @Test
+    fun cellsArriveOnlyWhileTheLocationIsUnusable() {
+        val t = PlaceTracker(listOf(stationA, stationB))
+        t.update(at(5000.0, 0.0))
+        assertTrue(t.updateByCell("a", 1 * min, locationStale = false).isEmpty())
+        assertTrue(t.updateByCell("a", 2 * min, locationStale = true).single() is PlaceEvent.Arrive)
+        // 基地局で到着しているあいだは、位置が届いていても次の駅の基地局で移る
+        assertEquals(listOf(PlaceEvent.Leave(stationA), PlaceEvent.Arrive(stationB)), t.updateByCell("b", 4 * min, locationStale = false))
+    }
+
+    @Test
+    fun onlyCoarseFixesWhileGpsIsRequestedCountAsNoLocation() {
+        val now = 100 * min
+        // 粗い位置は15秒ごとに届いているが、精度のよい位置は2分前が最後。GPS は5分前から頼んでいる
+        assertTrue(SceneTiming.locationStale(now - 15_000, now, 15.0, lastPreciseFixMs = now - 2 * min, gpsSinceMs = now - 5 * min))
+        assertTrue(SceneTiming.locationStale(now - 15_000, now, 15.0, lastPreciseFixMs = null, gpsSinceMs = now - 50_000))
+        // GPS を頼んでまだ45秒たっていなければ待つ
+        assertFalse(SceneTiming.locationStale(now - 15_000, now, 15.0, lastPreciseFixMs = null, gpsSinceMs = now - 30_000))
+        // 精度のよい位置が届いていれば取れている
+        assertFalse(SceneTiming.locationStale(now - 15_000, now, 15.0, lastPreciseFixMs = now - 15_000, gpsSinceMs = now - 5 * min))
+        // GPS を頼んでいなければ、粗い位置でも取れている
+        assertFalse(SceneTiming.locationStale(now - 15_000, now, 60.0, lastPreciseFixMs = null, gpsSinceMs = null))
+        assertTrue(SceneTiming.coarse(coarseAt(0.0, 0.0, acc = 151.0)))
+        assertFalse(SceneTiming.coarse(coarseAt(0.0, 0.0, acc = 30.0)))
     }
 
     @Test

@@ -53,6 +53,7 @@ import jp.fmt.ekifu.playback.PlaybackBus
 import jp.fmt.ekifu.playback.PlaybackMode
 import jp.fmt.ekifu.settings.AppSettings
 import kotlinx.coroutines.delay
+import kotlin.math.roundToInt
 
 @Composable
 fun PlayerScreen(
@@ -340,6 +341,16 @@ private fun DebugCard(ui: PlaybackBus.Ui, stream: StreamStatus, status: EngineSt
                     "GPS のきっかけ",
                     listOfNotNull("距離".takeIf { sc.nearByDistance }, "基地局".takeIf { sc.nearByCell }).joinToString("・").ifEmpty { "—" },
                 )
+                DebugRow(
+                    "位置の誤差",
+                    (sc.lastAccuracyM?.let { "±${it.roundToInt()}m" } ?: "—") +
+                        if (sc.cellFallback) "（取れていない扱い・基地局で判定）" else "",
+                )
+                // 到着・離れるなどの判定と、何で判定したか（位置・基地局・ボタン）
+                DebugRow("判定の記録", if (sc.judgeLog.isEmpty()) "まだなし" else "")
+                sc.judgeLog.forEach { line ->
+                    Text(line, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                }
             }
             // 接近・到着・離れるの演出が鳴り始めた再生時刻
             DebugRow("演出の記録", if (ui.placeLog.isEmpty()) "まだなし" else "")

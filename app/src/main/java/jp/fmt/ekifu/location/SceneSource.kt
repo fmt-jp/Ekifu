@@ -44,9 +44,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import java.text.SimpleDateFormat
 import java.time.LocalDate
+import java.util.Date
+import java.util.Locale
 import java.util.TimeZone
 import kotlin.coroutines.resume
+import kotlin.math.roundToInt
 
 /** 画面のデバッグ表示用 */
 data class SceneUi(
@@ -75,6 +79,12 @@ data class SceneUi(
     /** GPS を入れたきっかけ：登録地点からの距離／その地点で覚えた基地局 */
     val nearByDistance: Boolean = false,
     val nearByCell: Boolean = false,
+    /** 最後に届いた位置の誤差（m） */
+    val lastAccuracyM: Double? = null,
+    /** 位置が取れていないとみなして基地局で判定しているか（GPS を頼んでも粗い位置しか来ないときも含む） */
+    val cellFallback: Boolean = false,
+    /** 到着・離れるなどの判定と、何で判定したか（新しいものが下。デバッグ表示用） */
+    val judgeLog: List<String> = emptyList(),
 )
 
 /**
@@ -116,6 +126,9 @@ class SceneSource(
     private var cellJob: Job? = null
     private var lastCells: CellSnapshot? = null
     private var cellPlaceId: String? = null
+    /** 最後に精度のよい位置（誤差150m以下）が届いた時刻と、GPS を頼み始めた時刻（頼んでいなければ null） */
+    private var lastPreciseFixMs: Long? = null
+    private var gpsSinceMs: Long? = null
 
     private val callback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
@@ -151,11 +164,12 @@ class SceneSource(
     /** 位置を受け取るたびに登録地点との距離を判定する（場面を決めるのは5分ごと） */
     private fun onFix(fix: LocationFix) {
         latest = fix
-        val events = tracker.update(fix)
-        if (events.isNotEmpty()) onPlaceEvents(events)
+        if (!SceneTiming.coarse(fix)) lastPreciseFixMs = fix.timeMs
+        emit(tracker.update(fix), "位置" + (fix.accuracyM?.let { "±${it.roundToInt()}m" } ?: ""))
         val nearest = tracker.nearest(fix)
         ui = ui.copy(
             lastFixAtMs = fix.timeMs,
+            lastAccuracyM = fix.accuracyM,
             nearestName = nearest?.first?.name,
             nearestDistanceM = nearest?.second,
             trackedName = tracker.current?.name,
@@ -251,6 +265,7 @@ class SceneSource(
         fused.removeLocationUpdates(callback)
         this.intervalMs = 0
         highAccuracy = false
+        gpsSinceMs = null
         ui = ui.copy(locationIntervalSec = null)
         publish(nextSceneAtMs = null)
     }
@@ -278,12 +293,13 @@ class SceneSource(
         if (fix != null && now - fix.timeMs < LEARN_FIX_MAX_AGE_MS) {
             tracker.confirmedInside(fix)?.let { learnCells(it.id, snap) }
         }
-        if (SceneTiming.locationStale(fix?.timeMs, now, intervalMs / 1000.0)) {
-            val events = tracker.updateByCell(cellPlaceId, now)
-            if (events.isNotEmpty()) onPlaceEvents(events)
-        }
+        // GPS を頼んでも粗い位置しか来ない（地下で基地局・Wi-Fi から出した位置だけ届く）ときも、取れていないとみなす
+        val stale = SceneTiming.locationStale(fix?.timeMs, now, intervalMs / 1000.0, lastPreciseFixMs, gpsSinceMs)
+        // 基地局で到着しているあいだは、位置が届いていても基地局で離れる・次の地点へ移る
+        emit(tracker.updateByCell(cellPlaceId, now, stale), "基地局")
         ui = ui.copy(
             cellAvailable = true,
+            cellFallback = stale,
             cellKey = snap.serving.firstOrNull(),
             cellPlaceName = tracker.places.firstOrNull { it.id == cellPlaceId }?.name,
             trackedName = tracker.current?.name,
@@ -292,6 +308,24 @@ class SceneSource(
         )
         adjustInterval(fix)
         onUi(ui)
+    }
+
+    /** 判定の結果を作曲へ送り、何で判定したかを記録する（デバッグ表示の「判定の記録」） */
+    private fun emit(events: List<PlaceEvent>, source: String) {
+        if (events.isEmpty()) return
+        onPlaceEvents(events)
+        val time = SimpleDateFormat("HH:mm:ss", Locale.JAPAN).format(Date())
+        val lines = events.map { e ->
+            val what = when (e) {
+                is PlaceEvent.Approach -> "接近"
+                is PlaceEvent.Arrive -> "到着"
+                is PlaceEvent.StayAtStart -> "滞在（開始時）"
+                is PlaceEvent.Return -> "滞在に戻る"
+                is PlaceEvent.Leave -> "離れる"
+            }
+            "$time ${e.place.name} $what（$source）"
+        }
+        ui = ui.copy(judgeLog = (ui.judgeLog + lines).takeLast(JUDGE_LOG_SIZE))
     }
 
     private fun learnCells(placeId: String, snap: CellSnapshot) {
@@ -315,8 +349,7 @@ class SceneSource(
                 onResult(null)
                 return@launch
             }
-            val events = tracker.forceArrive(target.id, now)
-            if (events.isNotEmpty()) onPlaceEvents(events)
+            emit(tracker.forceArrive(target.id, now), "ボタン")
             snap?.let { learnCells(target.id, it) }
             ui = ui.copy(trackedName = tracker.current?.name, trackedState = tracker.state, trackedSilent = tracker.isSilent)
             adjustInterval(latest)
@@ -356,6 +389,7 @@ class SceneSource(
 
     @SuppressLint("MissingPermission") // hasPermission を確かめてから呼ぶ
     private fun requestUpdates(intervalMs: Long, highAccuracy: Boolean = false) {
+        if (!highAccuracy) gpsSinceMs = null else if (!this.highAccuracy || gpsSinceMs == null) gpsSinceMs = System.currentTimeMillis()
         this.intervalMs = intervalMs
         this.highAccuracy = highAccuracy
         ui = ui.copy(locationIntervalSec = (intervalMs / 1000).toInt(), highAccuracy = highAccuracy)
@@ -397,6 +431,8 @@ class SceneSource(
         private val cellCheckMs = (PlaceConstants.CELL_CHECK_SEC * 1000).toLong()
         /** 基地局を覚えるのは、この時間より新しい位置で内側の円の中と分かったときだけ */
         private const val LEARN_FIX_MAX_AGE_MS = 30_000L
+        /** 「判定の記録」に残す件数 */
+        private const val JUDGE_LOG_SIZE = 6
 
         fun hasLocationPermission(context: Context): Boolean =
             listOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION).any {

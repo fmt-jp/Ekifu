@@ -41,6 +41,12 @@ object PlaceConstants {
     const val CELL_FALLBACK_MIN_SEC = 45.0
     /** 基地局を読む間隔（仕様外・要調整） */
     const val CELL_CHECK_SEC = 15.0
+    /**
+     * 誤差がこれより大きい位置は「粗い位置」（地下で基地局・Wi-Fi から出した位置など）。GPS を頼んで
+     * [CELL_FALLBACK_MIN_SEC] たっても粗い位置しか来なければ取れていないとみなし、基地局・ボタンで到着したあとは
+     * 粗い位置では離れない（仕様外・要調整）
+     */
+    const val COARSE_FIX_M = 150.0
     /** 「着いた」ボタン：基地局で分からないときは、最後の位置からこの距離以内で一番近い地点 */
     const val MANUAL_ARRIVE_MAX_M = 3000.0
 
