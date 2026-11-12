@@ -27,6 +27,11 @@ data class ComposerStatus(
     val fusionChord: FusionChord? = null,
     /** フュージョンのいまのブロックの頭の時刻（停止のキメを16分に合わせる） */
     val gridStartSec: Double? = null,
+    /**
+     * 鳴っている到着の演出の通し番号（到着の演出のあいだだけ。演出なしの滞在では null）。
+     * 番号が変わったら新しい到着の演出が聞こえ始めた（地点名の読み上げのきっかけ）
+     */
+    val arrival: Int? = null,
 )
 
 /**
@@ -82,8 +87,14 @@ class Composer(seed: Int, private val config: ComposerConfig = ComposerConfig())
 
     private var lastMelody: Int? = null
     private var melodyMuteUntilSec = 0.0
+    private var arrivalChimeOn = true
+    private var arrivalSerial = 0
 
     // ---------------- 入力 ----------------
+
+    override fun setArrivalChime(on: Boolean) {
+        arrivalChimeOn = on
+    }
 
     /** 場面を変える（次の和音の切り替えで反映） */
     override fun setScene(newScene: Scene) {
@@ -173,6 +184,8 @@ class Composer(seed: Int, private val config: ComposerConfig = ComposerConfig())
         it.delayFeedback = delayFeedback
         it.lastMelody = lastMelody
         it.melodyMuteUntilSec = melodyMuteUntilSec
+        it.arrivalChimeOn = arrivalChimeOn
+        it.arrivalSerial = arrivalSerial
     }
 
     /** tSec まで作曲を進め、新しく決まったイベントを返す */
@@ -191,6 +204,7 @@ class Composer(seed: Int, private val config: ComposerConfig = ComposerConfig())
         masterCutoffHz = cutoffHz,
         scene = pendingScene ?: scene,
         place = place,
+        arrival = arrivalSerial.takeIf { phase == Phase.ARRIVE && it > 0 },
     )
 
     // ---------------- 内部 ----------------
@@ -226,9 +240,10 @@ class Composer(seed: Int, private val config: ComposerConfig = ComposerConfig())
             placeTheme = null
         }
 
-        // フェーズ
+        // フェーズ（到着中にまた到着が来たら（「着いた」ボタン）、到着の演出をはじめからやり直す）
+        val rearrive = pendingPhase == Phase.ARRIVE && phase == Phase.ARRIVE
         val next = decideNextPhase(first)
-        val entered = first || next != phase
+        val entered = first || next != phase || rearrive
         if (entered) {
             phase = next
             phaseStartSec = timeSec
@@ -260,11 +275,15 @@ class Composer(seed: Int, private val config: ComposerConfig = ComposerConfig())
         chordBeats = if (phase == Phase.ARRIVE) C.ARRIVE_CHORD_BEATS else C.CHORD_BEATS
         out += ReleaseEvent(timeSec, setOf(Instrument.PAD, Instrument.BASS))
         // 到着の合図：鳴っている音を余韻に入らせ、ベルの上りの3音。到着の和音とテーマはそのあと
+        // （読み上げだけの設定では、ベルを鳴らさずに間だけ空けて、そこで地点名を読む）
         val arrivalChime = phase == Phase.ARRIVE && entered
         val chordAt = if (arrivalChime) timeSec + C.ARRIVAL_CHIME_GAP_SEC else timeSec
         if (arrivalChime) {
-            C.ARRIVAL_CHIME_MIDI.forEachIndexed { i, midi ->
-                out += NoteEvent(timeSec + i * C.ARRIVAL_CHIME_NOTE_SEC, Instrument.BELL, midi, C.ARRIVAL_CHIME_GAIN, pan = 0.0)
+            arrivalSerial++
+            if (arrivalChimeOn) {
+                C.ARRIVAL_CHIME_MIDI.forEachIndexed { i, midi ->
+                    out += NoteEvent(timeSec + i * C.ARRIVAL_CHIME_NOTE_SEC, Instrument.BELL, midi, C.ARRIVAL_CHIME_GAIN, pan = 0.0)
+                }
             }
             melodyMuteUntilSec = chordAt
         }

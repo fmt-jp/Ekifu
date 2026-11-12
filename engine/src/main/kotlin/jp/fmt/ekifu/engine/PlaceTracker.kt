@@ -12,8 +12,10 @@ data class RegisteredPlace(
     val arriveRadiusM: Int,
     val mood: Mood,
     val themeSeed: Int,
+    /** 読み上げに使う読み（ひらがな。空なら名前を読む） */
+    val reading: String? = null,
 ) {
-    val place: Place get() = Place(id, name, mood, themeSeed)
+    val place: Place get() = Place(id, name, mood, themeSeed, reading)
 }
 
 /** 判定の結果として作曲に送る出来事 */

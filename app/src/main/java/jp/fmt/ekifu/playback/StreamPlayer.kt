@@ -10,6 +10,7 @@ import android.util.Log
 import jp.fmt.ekifu.engine.ChunkStream
 import jp.fmt.ekifu.engine.ComposerInput
 import jp.fmt.ekifu.engine.MusicConstants
+import jp.fmt.ekifu.engine.PlaceConstants
 import jp.fmt.ekifu.engine.SoundEngine
 import jp.fmt.ekifu.engine.StreamStatus
 
@@ -42,6 +43,13 @@ class StreamPlayer(context: Context, private val listener: Listener) {
     @Volatile private var playRequestedAtMs = 0L
     private var synthThread: Thread? = null
     private var writerThread: Thread? = null
+    /** 読み上げのあいだ曲の音量を下げる（書き込みスレッドが少しずつ近づける） */
+    @Volatile private var duckTarget = 1f
+
+    /** 到着の読み上げのあいだ曲の音量を下げる／戻す（どのスレッドからでも） */
+    fun duck(on: Boolean) {
+        duckTarget = if (on) PlaceConstants.SPEECH_DUCK_GAIN.toFloat() else 1f
+    }
 
     val isPrepared: Boolean get() = stream != null
 
@@ -137,6 +145,7 @@ class StreamPlayer(context: Context, private val listener: Listener) {
         val buf = ShortArray(BLOCK_FRAMES * MusicConstants.CHANNELS)
         var trackPlaying = false
         var volume = 0f
+        var duckLevel = duckTarget
         var lastStatusMs = 0L
         var finished = false
         try {
@@ -152,6 +161,7 @@ class StreamPlayer(context: Context, private val listener: Listener) {
                 }
                 if (!trackPlaying) {
                     volume = 0f
+                    duckLevel = duckTarget
                     track.setVolume(volume)
                     track.play()
                     trackPlaying = true
@@ -179,9 +189,11 @@ class StreamPlayer(context: Context, private val listener: Listener) {
                     Log.i(TAG, "再生開始まで ${System.currentTimeMillis() - playRequestedAtMs} ms")
                     playRequestedAtMs = 0L
                 }
-                if (volume < 1f) {
+                val target = duckTarget
+                if (volume < 1f || duckLevel != target) {
                     volume = minOf(1f, volume + VOLUME_STEP)
-                    track.setVolume(volume)
+                    duckLevel = if (duckLevel < target) minOf(target, duckLevel + DUCK_STEP) else maxOf(target, duckLevel - DUCK_STEP)
+                    track.setVolume(volume * duckLevel)
                 }
 
                 val now = System.currentTimeMillis()
@@ -219,6 +231,8 @@ class StreamPlayer(context: Context, private val listener: Listener) {
         const val TRACK_BUFFER_MS = 500
         const val STATUS_INTERVAL_MS = 250L
         const val VOLUME_STEP = 0.2f
+        /** 読み上げで音量を下げる・戻す速さ（1回の書き込み約46msあたり） */
+        const val DUCK_STEP = 0.1f
         const val FADE_STEPS = 8
         const val FADE_STEP_MS = 20L
         /** 付け忘れ防止の上限（再生を続けるあいだは play() のたびに取り直す） */

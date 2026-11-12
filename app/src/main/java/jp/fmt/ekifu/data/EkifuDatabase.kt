@@ -55,10 +55,12 @@ data class PlaceEntity(
     val mood: String,
     val themeSeed: Int,
     val createdAt: Long,
+    /** 到着の読み上げに使う読み（ひらがな）。空なら名前を読む */
+    val reading: String = "",
 ) {
     val moodValue: Mood get() = Mood.entries.firstOrNull { it.name == mood } ?: Mood.CALM
 
-    fun toRegistered() = RegisteredPlace(id, name, lat, lng, approachRadiusM, arriveRadiusM, moodValue, themeSeed)
+    fun toRegistered() = RegisteredPlace(id, name, lat, lng, approachRadiusM, arriveRadiusM, moodValue, themeSeed, reading.ifBlank { null })
 }
 
 @Dao
@@ -105,7 +107,7 @@ interface PlaceCellDao {
     suspend fun forget(placeId: String)
 }
 
-@Database(entities = [Visit::class, PlaceEntity::class, PlaceCell::class], version = 3, exportSchema = false)
+@Database(entities = [Visit::class, PlaceEntity::class, PlaceCell::class], version = 4, exportSchema = false)
 abstract class EkifuDatabase : RoomDatabase() {
     abstract fun visits(): VisitDao
     abstract fun places(): PlaceDao
@@ -117,7 +119,7 @@ abstract class EkifuDatabase : RoomDatabase() {
         fun get(context: Context): EkifuDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(context.applicationContext, EkifuDatabase::class.java, "ekifu.db")
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .build()
                     .also { instance = it }
             }
@@ -143,6 +145,13 @@ private val MIGRATION_2_3 = object : Migration(2, 3) {
             "CREATE TABLE IF NOT EXISTS `place_cells` (`placeId` TEXT NOT NULL, `cellKey` TEXT NOT NULL, " +
                 "`count` INTEGER NOT NULL, PRIMARY KEY(`placeId`, `cellKey`))",
         )
+    }
+}
+
+/** 登録地点に読み上げ用の読みを追加（既存の地点は空＝名前を読む） */
+private val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `places` ADD COLUMN `reading` TEXT NOT NULL DEFAULT ''")
     }
 }
 

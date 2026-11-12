@@ -8,6 +8,16 @@ import jp.fmt.ekifu.engine.MusicStyle
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
+/** 到着の知らせ方（到着の合図をベルで鳴らすか、地点名を読み上げるか） */
+enum class ArrivalNotice(val label: String, val description: String) {
+    CHIME("音", "曲を一瞬止めて、ベルの上りの3音を鳴らします（これまでどおり）"),
+    SPEECH("読み上げ", "曲を一瞬止めて、ベルの代わりに「〇〇に着きました」と読み上げます"),
+    BOTH("両方", "ベルの上りの3音のあとに、続けて「〇〇に着きました」と読み上げます"),
+    ;
+
+    val speaks: Boolean get() = this != CHIME
+}
+
 /** アプリの設定（端末内に保存） */
 object AppSettings {
     private const val PREFS = "ekifu_settings"
@@ -20,6 +30,7 @@ object AppSettings {
     private const val KEY_LOC_VEHICLE_S = "location_vehicle_s"
     private const val KEY_LOC_NEAR_S = "location_near_s"
     private const val KEY_LOC_KEEP_GPS = "location_keep_gps"
+    private const val KEY_ARRIVAL_NOTICE = "arrival_notice"
 
     private val _debugVisible = MutableStateFlow(false)
     /** デバッグ表示と開発用（デモ再生）を出すか。既定はオフ */
@@ -41,6 +52,10 @@ object AppSettings {
     /** いま使う位置の取り方（おまかせの値か、カスタムの値）。再生中に変えても次の位置から反映する */
     val locationPolicy: StateFlow<LocationPolicy> = _locationPolicy
 
+    private val _arrivalNotice = MutableStateFlow(ArrivalNotice.CHIME)
+    /** 到着の知らせ方。既定は音（これまでどおり）。再生中に変えたら次の到着から */
+    val arrivalNotice: StateFlow<ArrivalNotice> = _arrivalNotice
+
     private var loaded = false
 
     fun load(context: Context) {
@@ -60,7 +75,14 @@ object AppSettings {
             nearIntervalSec = p.getFloat(KEY_LOC_NEAR_S, d.nearIntervalSec.toFloat()).toDouble(),
             keepGpsAfterArrival = p.getBoolean(KEY_LOC_KEEP_GPS, d.keepGpsAfterArrival),
         )
+        _arrivalNotice.value = ArrivalNotice.entries.firstOrNull { it.name == p.getString(KEY_ARRIVAL_NOTICE, null) }
+            ?: ArrivalNotice.CHIME
         updateLocationPolicy()
+    }
+
+    fun setArrivalNotice(context: Context, notice: ArrivalNotice) {
+        _arrivalNotice.value = notice
+        prefs(context).edit().putString(KEY_ARRIVAL_NOTICE, notice.name).apply()
     }
 
     /** おまかせを選ぶ。カスタムを初めて選んだときは、それまでのおまかせの値から始める */

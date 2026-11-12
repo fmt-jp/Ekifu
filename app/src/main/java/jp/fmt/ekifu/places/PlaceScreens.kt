@@ -1,5 +1,6 @@
 package jp.fmt.ekifu.places
 
+import jp.fmt.ekifu.playback.ArrivalSpeaker
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
@@ -127,6 +128,7 @@ fun PlaceEditScreen(
     val scope = rememberCoroutineScope()
 
     var name by rememberSaveable { mutableStateOf(existing?.name ?: "") }
+    var reading by rememberSaveable { mutableStateOf(existing?.reading ?: "") }
     var lat by rememberSaveable { mutableStateOf(existing?.lat) }
     var lng by rememberSaveable { mutableStateOf(existing?.lng) }
     var mood by rememberSaveable { mutableStateOf(existing?.moodValue ?: Mood.CALM) }
@@ -172,6 +174,24 @@ fun PlaceEditScreen(
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
+        // 到着の読み上げで読む名前。漢字の読み間違いを防ぐ
+        OutlinedTextField(
+            value = reading,
+            onValueChange = { reading = it },
+            label = { Text("読み（ひらがな・任意）") },
+            supportingText = { Text("到着の読み上げで使います。空なら名前をそのまま読みます") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        OutlinedButton(
+            onClick = {
+                val spoken = reading.trim().ifEmpty { name.trim() }
+                if (spoken.isNotEmpty()) ArrivalSpeaker.preview(context, ArrivalSpeaker.sentence(spoken)) { ok ->
+                    if (!ok) message = ArrivalSpeaker.UNAVAILABLE_MESSAGE
+                }
+            },
+            enabled = name.isNotBlank() || reading.isNotBlank(),
+        ) { Text("読み上げを試す") }
 
         Text("位置", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
         OutlinedButton(
@@ -262,6 +282,7 @@ fun PlaceEditScreen(
                         mood = mood.name,
                         themeSeed = themeSeed,
                         createdAt = existing?.createdAt ?: System.currentTimeMillis(),
+                        reading = reading.trim(),
                     ),
                 )
             },

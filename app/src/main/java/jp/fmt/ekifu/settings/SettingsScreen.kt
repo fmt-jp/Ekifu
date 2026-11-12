@@ -1,5 +1,6 @@
 package jp.fmt.ekifu.settings
 
+import jp.fmt.ekifu.playback.ArrivalSpeaker
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -107,6 +108,8 @@ fun SettingsScreen(onBack: () -> Unit) {
                     }
                 }
             }
+
+            ArrivalNoticeCard()
 
             LocationCard()
 
@@ -264,6 +267,57 @@ private fun styleDescription(style: MusicStyle) = when (style) {
     MusicStyle.HEALING -> "パッドとベルの穏やかなインストゥルメンタル"
     MusicStyle.FUSION -> "明るいバンド編成のフュージョン。移動の速さで盛り上がりが変わる"
     MusicStyle.BAND -> "フュージョンを生楽器（アルトサックス・エレピ・ベース・ドラム）で"
+}
+
+/** 到着の知らせ方：音・読み上げ・両方 */
+@Composable
+private fun ArrivalNoticeCard() {
+    val context = LocalContext.current
+    val notice by AppSettings.arrivalNotice.collectAsStateWithLifecycle()
+    var message by remember { mutableStateOf<String?>(null) }
+    SettingCard {
+        Text("到着の知らせ方", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text(
+            "登録地点に着いたときの合図です。どれを選んでも、地点のテーマで曲が着地します。" +
+                "読み上げは端末内の日本語の声を使い、読んでいるあいだは曲の音量を下げます。" +
+                "日本語の声が入っていないときはベルで鳴らします。再生中に変えたら次の到着から。",
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Column(Modifier.selectableGroup()) {
+            ArrivalNotice.entries.forEach { n ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .selectable(
+                            selected = n == notice,
+                            onClick = { AppSettings.setArrivalNotice(context, n) },
+                            role = Role.RadioButton,
+                        )
+                        .padding(vertical = 4.dp),
+                ) {
+                    RadioButton(selected = n == notice, onClick = null)
+                    Column(Modifier.padding(start = 12.dp)) {
+                        Text(n.label, style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            n.description,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
+        if (notice.speaks) {
+            OutlinedButton(onClick = {
+                message = null
+                ArrivalSpeaker.preview(context, ArrivalSpeaker.sentence("自宅")) { ok ->
+                    if (!ok) message = ArrivalSpeaker.UNAVAILABLE_MESSAGE
+                }
+            }) { Text("読み上げを試す") }
+        }
+        message?.let { Text(it, color = MaterialTheme.colorScheme.tertiary, style = MaterialTheme.typography.bodySmall) }
+    }
 }
 
 @Composable

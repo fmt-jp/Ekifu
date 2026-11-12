@@ -69,4 +69,9 @@ data class Place(
     val name: String,
     val mood: Mood,
     val themeSeed: Int,
-)
+    /** 読み上げに使う読み（ひらがな）。空なら name を読む */
+    val reading: String? = null,
+) {
+    /** 到着の読み上げで読む名前 */
+    val spokenName: String get() = reading?.takeIf { it.isNotBlank() } ?: name
+}

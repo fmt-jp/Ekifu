@@ -13,6 +13,12 @@ interface ComposerInput {
 
     /** 「始まり」を鳴らし終えてから接近に入る（曲調の切り替えで、接近中だった場合） */
     fun approachAfterStart(target: Place)
+
+    /**
+     * 到着の合図にベルの上りの3音を鳴らすか（設定の「到着の知らせ方」。読み上げだけのときは false で、
+     * 曲を一瞬止める間はそのまま残して、そこで地点名を読む）。次の到着から反映する
+     */
+    fun setArrivalChime(on: Boolean) {}
 }
 
 /** PCM を順番に書き出すもの（終わりのフェードアウトやバッファ不足のつなぎに使う） */

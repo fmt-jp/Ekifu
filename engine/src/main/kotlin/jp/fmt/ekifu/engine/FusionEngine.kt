@@ -86,6 +86,7 @@ class FusionEngine private constructor(
                 heat = block?.heat,
                 fusionChord = chord,
                 gridStartSec = block?.startSec,
+                arrival = block?.arrival,
             ),
             demoCue = currentCue,
             activeVoices = synth.activeVoices,

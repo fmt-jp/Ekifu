@@ -1,5 +1,7 @@
 package jp.fmt.ekifu.playback
 
+import jp.fmt.ekifu.engine.PlaceConstants
+import jp.fmt.ekifu.settings.ArrivalNotice
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
@@ -42,6 +44,7 @@ class EkifuPlayer(context: Context) : SimpleBasePlayer(Looper.getMainLooper()) {
     private val audio = StreamPlayer(context.applicationContext, object : StreamPlayer.Listener {
         override fun onStatus(status: StreamStatus) {
             logPlacePhase(status)
+            checkArrivalSpeech(status)
             val sub = subtitleFor(status)
             if (PlaybackBus.hasSubscribers) PlaybackBus.updateStream(status)
             if (sub != postedSubtitle) {
@@ -78,6 +81,57 @@ class EkifuPlayer(context: Context) : SimpleBasePlayer(Looper.getMainLooper()) {
         subtitle = defaultSubtitle()
         postedSubtitle = subtitle
         scope.launch { AppSettings.style.drop(1).collect { onStyleChanged(it) } }
+        // 到着の知らせ方は、再生中に変えたら次の到着から
+        scope.launch { AppSettings.arrivalNotice.drop(1).collect { if (audio.isPrepared && !ending) updateSpeaker() } }
+    }
+
+    // ---------------- 到着の読み上げ（設定の「到着の知らせ方」） ----------------
+
+    private var speaker: ArrivalSpeaker? = null
+    /** 書き込みスレッドから：直前に見た到着の演出の通し番号 */
+    @Volatile private var heardArrival: Int? = null
+
+    /** 設定に合わせて読み上げを用意・片付けし、合図のベルを鳴らすかを作曲に伝える */
+    private fun updateSpeaker() {
+        val notice = AppSettings.arrivalNotice.value
+        if (notice.speaks && speaker == null) {
+            speaker = ArrivalSpeaker(
+                appContext,
+                onReady = { postArrivalChime() },
+                onSpeaking = { audio.duck(it) },
+            )
+        } else if (!notice.speaks) {
+            releaseSpeaker()
+        }
+        postArrivalChime()
+    }
+
+    /** 読み上げだけのときはベルを鳴らさない（日本語の声が使えなければベルで知らせる） */
+    private fun postArrivalChime() {
+        val chime = AppSettings.arrivalNotice.value != ArrivalNotice.SPEECH || speaker?.ready != true
+        audio.post { it.setArrivalChime(chime) }
+    }
+
+    private fun releaseSpeaker() {
+        speaker?.release()
+        speaker = null
+        audio.duck(false)
+    }
+
+    /** 書き込みスレッドから：新しい到着の演出が再生位置に来たら、少し待って「〇〇に着きました」と読む */
+    private fun checkArrivalSpeech(status: StreamStatus) {
+        val c = status.engine?.composer
+        val arrival = if (status.ending) null else c?.arrival
+        val prev = heardArrival
+        heardArrival = arrival
+        if (arrival == null || arrival == prev) return
+        val name = c?.place?.spokenName ?: return
+        val notice = AppSettings.arrivalNotice.value
+        if (!notice.speaks) return
+        val delaySec = if (notice == ArrivalNotice.BOTH) PlaceConstants.SPEECH_AFTER_CHIME_SEC else PlaceConstants.SPEECH_DELAY_SEC
+        handler.postDelayed({
+            if (playWhenReady && !ending) speaker?.speak(ArrivalSpeaker.sentence(name))
+        }, (delaySec * 1000).toLong())
     }
 
     /**
@@ -192,6 +246,7 @@ class EkifuPlayer(context: Context) : SimpleBasePlayer(Looper.getMainLooper()) {
         style = AppSettings.style.value
         PlaybackBus.clearPlaceLog()
         loggedPhase = null
+        heardArrival = null
         subtitle = defaultSubtitle()
         postedSubtitle = subtitle
         when (mode) {
@@ -219,6 +274,7 @@ class EkifuPlayer(context: Context) : SimpleBasePlayer(Looper.getMainLooper()) {
                 }
             }
         }
+        updateSpeaker()
     }
 
     /**
@@ -235,6 +291,8 @@ class EkifuPlayer(context: Context) : SimpleBasePlayer(Looper.getMainLooper()) {
             createSwitched(newStyle, demo, timelineSec, if (demo) null else src?.carryOver())
         }
         if (!switched) return
+        // 新しいエンジンにも、合図のベルを鳴らすかを伝える
+        postArrivalChime()
         style = newStyle
         subtitle = defaultSubtitle()
         postedSubtitle = subtitle
@@ -274,6 +332,7 @@ class EkifuPlayer(context: Context) : SimpleBasePlayer(Looper.getMainLooper()) {
 
     override fun handleRelease(): ListenableFuture<*> {
         scope.cancel()
+        releaseSpeaker()
         releaseScenes()
         audio.release()
         interruptions.release()
@@ -301,6 +360,7 @@ class EkifuPlayer(context: Context) : SimpleBasePlayer(Looper.getMainLooper()) {
     }
 
     private fun resetToIdle() {
+        releaseSpeaker()
         ending = false
         playWhenReady = false
         playbackState = Player.STATE_IDLE

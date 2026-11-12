@@ -27,6 +27,8 @@ data class FusionBlock(
     val cutoffHz: Double,
     /** 外側の円に入った最初の接近ブロック：頭の2小節は伴奏を止めてベルでテーマを鳴らす */
     val entry: Boolean = false,
+    /** 到着のブロックなら到着の演出の通し番号（地点名の読み上げのきっかけ） */
+    val arrival: Int? = null,
 ) {
     val kimeBars: Set<Int> get() = kimes.keys
     val bpm: Double get() = 60.0 / (stepSec * 4)
@@ -106,6 +108,8 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
 
     /** 滞在に入ってからのブロック数（滞在中のベルを1ブロックおきに鳴らすため） */
     private var stayBlocks = 0
+    private var arrivalChimeOn = true
+    private var arrivalSerial = 0
 
     /** つなぎに差し替えたブロックと小節（画面の表示用。最近のものだけ） */
     private var transitions = mapOf<Int, Pair<Int, FusionTransition>>()
@@ -138,6 +142,10 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
         pendingPhase = Phase.STAY
         deferredApproach = null
         pendingPlace = target
+    }
+
+    override fun setArrivalChime(on: Boolean) {
+        arrivalChimeOn = on
     }
 
     override fun approachAfterStart(target: Place) {
@@ -189,6 +197,8 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
         it.held = held
         it.transitions = transitions
         it.stayBlocks = stayBlocks
+        it.arrivalChimeOn = arrivalChimeOn
+        it.arrivalSerial = arrivalSerial
     }
 
     /** そのブロックに入れたつなぎ（小節とつなぎ。なければ null） */
@@ -252,7 +262,8 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
             SunLevel.DAY -> F.DAY_CUTOFF_HZ
         }
         val entry = phase == Phase.APPROACH && (prev != Phase.APPROACH || prevPlace?.id != place?.id)
-        val block = FusionBlock(index, start, stepSec, phase, section, chords, heat, kimes, scene, place, cutoff, entry)
+        val arrival = if (phase == Phase.ARRIVE) ++arrivalSerial else null
+        val block = FusionBlock(index, start, stepSec, phase, section, chords, heat, kimes, scene, place, cutoff, entry, arrival)
         blocks = (blocks + block).takeLast(KEEP_BLOCKS)
         nextBlockSec = block.endSec
 
@@ -285,9 +296,12 @@ class FusionComposer(seed: Int, private val config: FusionComposerConfig = Fusio
         val p = place
         when {
             phase == Phase.ARRIVE && p != null -> {
-                // 到着の合図（1小節目）→ テーマ（2小節目）→ ゆっくり吹き直し（3〜5小節目）
-                F.ARRIVAL_CHIME_MIDI.forEachIndexed { i, midi ->
-                    events += BellNote(block.startSec + F.ARRIVAL_CHIME_STEPS[i] * block.stepSec, midi, F.BELL_CHIME_GAIN)
+                // 到着の合図（1小節目）→ テーマ（2小節目）→ ゆっくり吹き直し（3〜5小節目）。
+                // 読み上げだけの設定では、1小節目はキック・クラッシュだけにして、そこで地点名を読む
+                if (arrivalChimeOn) {
+                    F.ARRIVAL_CHIME_MIDI.forEachIndexed { i, midi ->
+                        events += BellNote(block.startSec + F.ARRIVAL_CHIME_STEPS[i] * block.stepSec, midi, F.BELL_CHIME_GAIN)
+                    }
                 }
                 bellTheme(block, p, F.STEPS_PER_BAR.toDouble(), F.THEME_NOTE_STEPS, F.BELL_ARRIVE_GAIN, events)
                 bellTheme(block, p, 2.0 * F.STEPS_PER_BAR, F.ARRIVAL_THEME_SLOW_STEPS, F.BELL_ARRIVE_SLOW_GAIN, events)

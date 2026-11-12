@@ -50,6 +50,15 @@ object PlaceConstants {
     /** 「着いた」ボタン：基地局で分からないときは、最後の位置からこの距離以内で一番近い地点 */
     const val MANUAL_ARRIVE_MAX_M = 3000.0
 
+    /**
+     * 到着の読み上げ（ユーザーと決めたこと：設定の「到着の知らせ方」で音・読み上げ・両方）。
+     * 到着の演出が再生位置に来てから読み始めるまでの時間（AudioTrack の作り置き約0.5秒ぶんを見込む）。
+     * 両方のときはベルの3音が鳴り終わるまで待つ。読んでいるあいだの曲の音量。値は仕様外・要調整
+     */
+    const val SPEECH_DELAY_SEC = 0.6
+    const val SPEECH_AFTER_CHIME_SEC = 1.6
+    const val SPEECH_DUCK_GAIN = 0.3
+
     /** 到着したあと（内側の円の中）は省電力の精度でこの間隔にする（ユーザーと決めたこと：到着後は GPS を控える） */
     const val ARRIVED_LOCATION_INTERVAL_SEC = 60.0
 
