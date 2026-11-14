@@ -111,6 +111,20 @@ fun SettingsScreen(onBack: () -> Unit) {
 
             ArrivalNoticeCard()
 
+            SettingCard {
+                val vibration by AppSettings.vibration.collectAsStateWithLifecycle()
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("振動", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text(
+                            "登録地点に近づいたとき（1回）と着いたとき（2回）に、スマホを短く振動させます。",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    Switch(checked = vibration, onCheckedChange = { AppSettings.setVibration(context, it) })
+                }
+            }
+
             LocationCard()
 
             SettingCard {

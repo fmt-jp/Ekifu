@@ -9,6 +9,7 @@ import android.os.Vibrator
 import android.os.VibratorManager
 import jp.fmt.ekifu.engine.PlaceConstants
 import jp.fmt.ekifu.engine.PlaceEvent
+import jp.fmt.ekifu.settings.AppSettings
 
 /**
  * 登録地点の外側の円に入ったとき・内側の円に入ったときに、スマホを短く振動させる（ユーザーと決めたこと）。
@@ -17,6 +18,8 @@ import jp.fmt.ekifu.engine.PlaceEvent
 object PlaceHaptics {
 
     fun play(context: Context, events: List<PlaceEvent>) {
+        // 設定の「振動」がオフなら鳴らさない
+        if (!AppSettings.vibration.value) return
         val pattern = when {
             events.any { it is PlaceEvent.Arrive } -> PlaceConstants.ARRIVE_VIBRATION_MS
             events.any { it is PlaceEvent.Approach } -> PlaceConstants.APPROACH_VIBRATION_MS

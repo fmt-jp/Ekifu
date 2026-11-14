@@ -31,6 +31,7 @@ object AppSettings {
     private const val KEY_LOC_NEAR_S = "location_near_s"
     private const val KEY_LOC_KEEP_GPS = "location_keep_gps"
     private const val KEY_ARRIVAL_NOTICE = "arrival_notice"
+    private const val KEY_VIBRATION = "place_vibration"
 
     private val _debugVisible = MutableStateFlow(false)
     /** デバッグ表示と開発用（デモ再生）を出すか。既定はオフ */
@@ -56,6 +57,10 @@ object AppSettings {
     /** 到着の知らせ方。既定は音（これまでどおり）。再生中に変えたら次の到着から */
     val arrivalNotice: StateFlow<ArrivalNotice> = _arrivalNotice
 
+    private val _vibration = MutableStateFlow(true)
+    /** 接近・到着でスマホを振動させるか。既定はオン（これまでどおり） */
+    val vibration: StateFlow<Boolean> = _vibration
+
     private var loaded = false
 
     fun load(context: Context) {
@@ -77,7 +82,13 @@ object AppSettings {
         )
         _arrivalNotice.value = ArrivalNotice.entries.firstOrNull { it.name == p.getString(KEY_ARRIVAL_NOTICE, null) }
             ?: ArrivalNotice.CHIME
+        _vibration.value = p.getBoolean(KEY_VIBRATION, true)
         updateLocationPolicy()
+    }
+
+    fun setVibration(context: Context, on: Boolean) {
+        _vibration.value = on
+        prefs(context).edit().putBoolean(KEY_VIBRATION, on).apply()
     }
 
     fun setArrivalNotice(context: Context, notice: ArrivalNotice) {
