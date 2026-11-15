@@ -29,7 +29,7 @@ object LofiConstants {
             DrumKind.KICK to 36, DrumKind.SNARE to 38, DrumKind.HAT to 42, DrumKind.OPEN_HAT to 46, DrumKind.CRASH to 49,
         ),
         leadGain = db(0.0),
-        keysGain = db(3.0),
+        keysGain = db(0.0),
         bassGain = db(0.0),
         drumGains = mapOf(
             DrumKind.KICK to db(-2.0), DrumKind.SNARE to db(-9.0), DrumKind.HAT to db(-14.0),
