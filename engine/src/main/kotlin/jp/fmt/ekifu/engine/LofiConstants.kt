@@ -27,13 +27,14 @@ object LofiConstants {
         drums = DRUMS,
         drumKeys = mapOf(
             DrumKind.KICK to 36, DrumKind.SNARE to 38, DrumKind.HAT to 42, DrumKind.OPEN_HAT to 46, DrumKind.CRASH to 49,
+            DrumKind.RIM to 37,
         ),
         leadGain = db(0.0),
         keysGain = db(0.0),
         bassGain = db(0.0),
         drumGains = mapOf(
             DrumKind.KICK to db(-2.0), DrumKind.SNARE to db(-9.0), DrumKind.HAT to db(-14.0),
-            DrumKind.OPEN_HAT to db(-16.0), DrumKind.CRASH to db(-16.0),
+            DrumKind.OPEN_HAT to db(-16.0), DrumKind.CRASH to db(-16.0), DrumKind.RIM to db(-12.0),
         ),
         // 生音フュージョンより暗め（全体のこもりは太陽で決める）
         keysLowpassHz = 6000.0,
@@ -113,12 +114,40 @@ object LofiConstants {
     const val DELAY_STEPS = 3
     const val DELAY_FEEDBACK = 0.22
 
-    // ---- メロディ（段階7aの試聴用：場所のモチーフをピアノでときどき弾く） ----
-    const val MELODY_EVERY_BARS = 4
-    const val MELODY_OCTAVE_UP = 0
+    // ---- 曲の組み立て（段階7b） ----
+    /** 1ブロックの小節数（和音の並び4小節×2） */
+    const val BLOCK_BARS = 8
+    /** 始まり：こもった音で和音とベースだけの小節数（レコードをかけたような入り） */
+    const val START_BARS = 4
+    /** 区切り：音をこもらせてドラムを抜く小節数 */
+    const val INTERLUDE_BARS = 4
+    /** 始まり・区切りのこもった音 */
+    const val MUFFLED_CUTOFF_HZ = 1100.0
+    /** 外側の円に入った最初のブロック：ドラムを止めてベルでテーマを鳴らす小節数 */
+    const val ENTRY_BREAK_BARS = 2
+    /** 道中のメロディ：ブロックの前半この小節数だけ弾き、後半は休む */
+    const val MELODY_BARS = 4
+    /** メロディの強さ */
+    const val MELODY_VELOCITY = 0.62
+    /** 地点のテーマをピアノで弾く強さ */
+    const val THEME_VELOCITY = 0.72
 
-    /** 試聴（音色デモ）のシード */
+    /**
+     * 到着の合図（両方の曲調と同じ形）：曲を止めてベルの上りの3音。主音 F の和音（F・A・C）を8分で。
+     * 音量は仕様外・要調整
+     */
+    val ARRIVAL_CHIME_MIDI = intArrayOf(77, 81, 84)
+    val ARRIVAL_CHIME_STEPS = intArrayOf(0, 2, 4)
+    /** 到着のブロック：1小節目は合図、2小節目でテーマ（四分）、3〜5小節目でゆっくり（二分）、6小節目で寄せて、7・8小節目で着地 */
+    const val ARRIVAL_THEME_BAR = 1
+    const val ARRIVAL_SLOW_BAR = 2
+    const val ARRIVAL_LAND_BAR = 6
+    /** テーマの1音の長さ（16分の数）：ふつうは四分、ゆっくりは二分 */
+    const val THEME_NOTE_STEPS = 4
+    const val THEME_SLOW_STEPS = 8
+    /** 滞在中は、この数のブロックごとにベルでテーマを静かに鳴らす（到着直後のブロックは鳴らさない） */
+    const val STAY_BELL_EVERY_BLOCKS = 2
+
+    /** デモ再生のシード */
     const val DEMO_SEED = 20_261_115
-    /** 試聴で1つの場面を鳴らす小節数 */
-    const val PREVIEW_BARS_PER_SCENE = 8
 }

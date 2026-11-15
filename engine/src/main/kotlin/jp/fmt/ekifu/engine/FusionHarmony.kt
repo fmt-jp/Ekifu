@@ -116,7 +116,8 @@ data class PolyNote(
     val velocity: Double,
 ) : FusionEvent
 
-enum class DrumKind { KICK, SNARE, HAT, OPEN_HAT, TOM_HIGH, TOM_MID, TOM_LOW, CRASH }
+/** RIM はスネアの縁を叩く音（ローファイの滞在で使う） */
+enum class DrumKind { KICK, SNARE, HAT, OPEN_HAT, TOM_HIGH, TOM_MID, TOM_LOW, CRASH, RIM }
 
 data class DrumHit(
     override val timeSec: Double,

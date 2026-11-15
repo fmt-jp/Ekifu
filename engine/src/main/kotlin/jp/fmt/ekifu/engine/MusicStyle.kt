@@ -55,8 +55,11 @@ object StyleEngines {
     /** ローファイの楽器が使えるか（音源が読めたか） */
     val lofiAvailable: Boolean get() = lofiSounds != null
 
-    /** 段階7aのローファイの音色デモ（場面を8小節ごとに切り替える） */
-    fun lofiPreview(sampleRate: Int = MusicConstants.SAMPLE_RATE): SoundEngine = LofiEngine.preview(lofiSounds, sampleRate)
+    /** 段階7bのローファイのデモ再生（ほかの曲調と同じ台本。7cで曲調の設定に入れる） */
+    fun lofiDemo(scriptStartSec: Double = 0.0, sampleRate: Int = MusicConstants.SAMPLE_RATE): SoundEngine =
+        LofiEngine.demo(lofiSounds, scriptStartSec, sampleRate).also { e ->
+            if (scriptStartSec > 0) DemoScript.COMMUTE.carryOverAt(scriptStartSec).let { s -> e.apply { s.applyTo(it) } }
+        }
 
     /** デモ再生のシード（曲調ごと。切り替えても同じ台本の続きを同じ曲で鳴らす） */
     fun demoSeed(style: MusicStyle): Int = when (style) {

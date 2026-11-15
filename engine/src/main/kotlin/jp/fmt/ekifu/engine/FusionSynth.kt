@@ -293,6 +293,10 @@ class FusionSynth(
                 sampleRate, true, FilterType.BANDPASS, F.SNARE_BANDPASS_HZ,
                 F.SNARE_DECAY_BASE_SEC + F.SNARE_DECAY_VEL_SEC * v, v * F.SNARE_GAIN, seed,
             )
+            // リム：短く高いスネア
+            DrumKind.RIM -> drums += NoiseVoice(
+                sampleRate, true, FilterType.BANDPASS, F.SNARE_BANDPASS_HZ * 2, F.SNARE_DECAY_BASE_SEC * 0.3, v * F.SNARE_GAIN, seed,
+            )
             DrumKind.HAT, DrumKind.OPEN_HAT -> hats += NoiseVoice(
                 sampleRate, false, FilterType.HIGHPASS, F.HAT_HIGHPASS_HZ,
                 if (d.kind == DrumKind.OPEN_HAT) F.OPEN_HAT_DECAY_SEC else F.HAT_DECAY_BASE_SEC + F.HAT_DECAY_VEL_SEC * v,

@@ -199,8 +199,8 @@ private fun NowPlayingCard(ui: PlaybackBus.Ui, status: EngineStatus?, nowMs: Lon
                 }
             }
             val heat = status.composer.heat
-            if (ui.mode == PlaybackMode.DEMO) {
-                Text("デモ再生", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.tertiary)
+            if (ui.mode == PlaybackMode.DEMO || ui.mode == PlaybackMode.LOFI_DEMO) {
+                Text(if (ui.mode == PlaybackMode.LOFI_DEMO) "デモ再生（ローファイ）" else "デモ再生", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.tertiary)
                 status.demoCue?.let { cue ->
                     Text(cue.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     // 聞きどころは癒しの音で書いている
@@ -390,18 +390,16 @@ private fun DeveloperCard(
             OutlinedButton(onClick = onPlayDemo, enabled = ui.state == PlaybackBus.State.IDLE) {
                 Text("デモ再生（自宅 → 公園 → 駅 → 職場）")
             }
-            // 段階7a：ローファイの楽器とビートの試聴（場面を8小節ごとに切り替える）
+            // 段階7b：ローファイで同じ台本を鳴らす（7cで曲調の設定に入れる）
             OutlinedButton(onClick = onPlayLofiDemo, enabled = ui.state == PlaybackBus.State.IDLE) {
-                Text("ローファイの音色デモ")
+                Text("ローファイのデモ再生")
             }
             if (ui.mode == PlaybackMode.LOFI_DEMO && ui.state != PlaybackBus.State.IDLE && status != null) {
                 val c = status.composer
-                Text("いまの場面：${c.scene.label}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
                 Text(
-                    "和音 ${c.chordLabel}・テンポ ${(60.0 / c.beatSec).roundToInt()}・こもり ${c.masterCutoffHz.roundToInt()}Hz",
+                    "${c.phase.label}・和音 ${c.chordLabel}・テンポ ${(60.0 / c.beatSec).roundToInt()}・こもり ${c.masterCutoffHz.roundToInt()}Hz",
                     style = MaterialTheme.typography.bodySmall,
                 )
-                return@Column
             }
             if (ui.mode == PlaybackMode.OMAKASE || ui.state == PlaybackBus.State.IDLE) return@Column
             DemoScript.COMMUTE.cues.forEach { cue ->

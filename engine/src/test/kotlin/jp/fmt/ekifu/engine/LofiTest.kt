@@ -89,7 +89,7 @@ class LofiTest {
         fun hatsPerBar(speed: Speed): Double {
             val c = LofiComposer(5).also { it.setScene(scene(speed)) }
             val events = compose(c, 40.0)
-            val bars = (0 until 6).map { c.barAt(10.0 + it * 4.0)!! }.distinct()
+            val bars = (0 until 6).map { c.barAt(20.0 + it * 3.5)!! }.distinct()
             val n = bars.sumOf { b ->
                 events.count { it is DrumHit && (it.kind == DrumKind.HAT || it.kind == DrumKind.OPEN_HAT) && it.timeSec >= b.startSec - 0.02 && it.timeSec < b.startSec + b.stepSec * 16 - 0.02 }
             }
@@ -105,8 +105,10 @@ class LofiTest {
     fun sunSetsCutoffAndNoise() {
         assertTrue(L.cutoffHz(SunLevel.NIGHT) < L.cutoffHz(SunLevel.TWILIGHT) && L.cutoffHz(SunLevel.TWILIGHT) < L.cutoffHz(SunLevel.DAY))
         val c = LofiComposer(1).also { it.setScene(scene(sun = SunLevel.NIGHT)) }
-        val events = compose(c, 5.0)
-        assertEquals(L.cutoffHz(SunLevel.NIGHT), events.filterIsInstance<FusionControl>().first().masterCutoffHz)
+        val events = compose(c, 30.0)
+        // 始まりはこもらせ、道中から太陽のこもり具合
+        assertEquals(L.MUFFLED_CUTOFF_HZ, events.filterIsInstance<FusionControl>().first().masterCutoffHz)
+        assertEquals(L.cutoffHz(SunLevel.NIGHT), events.filterIsInstance<FusionControl>().last().masterCutoffHz)
         assertEquals(L.noiseFactor(SunLevel.NIGHT), events.filterIsInstance<LofiControl>().first().noiseFactor)
     }
 
@@ -116,17 +118,9 @@ class LofiTest {
             val c = LofiComposer(7).also { it.setScene(scene(f = f)) }
             compose(c, 60.0)
             val allowed = LofiHarmony.progressions(f).flatten().toSet()
-            val used = (0 until 12).mapNotNull { c.barAt(5.0 + it * 4.0)?.chord }.toSet()
+            val used = (0 until 10).mapNotNull { c.barAt(20.0 + it * 3.5)?.chord }.toSet()
             assertTrue(allowed.containsAll(used), "$f：$used")
         }
-    }
-
-    @Test
-    fun previewCyclesTheScenes() {
-        val c = LofiComposer(1, LofiEngine.PREVIEW_SCENES)
-        compose(c, 400.0)
-        val seen = (0 until 400 step 2).mapNotNull { c.barAt(it.toDouble())?.scene }.toSet()
-        assertTrue(seen.containsAll(LofiEngine.PREVIEW_SCENES.take(5)), "試聴で場面が順に切り替わる")
     }
 
     @Test
@@ -143,9 +137,9 @@ class LofiTest {
         val sec = 6.0
         val n = (sec * sr).toInt()
         val whole = ShortArray(n * 2)
-        LofiEngine(11, sounds, null, sr).render(whole, n, 0)
+        LofiEngine(11, sounds, sampleRate = sr).render(whole, n, 0)
         val parts = ShortArray(n * 2)
-        val e = LofiEngine(11, sounds, null, sr)
+        val e = LofiEngine(11, sounds, sampleRate = sr)
         var done = 0
         var copy: SoundEngine? = null
         while (done < n) {
@@ -162,7 +156,7 @@ class LofiTest {
         val sec = 20.0
         val n = (sec * sr).toInt()
         val out = ShortArray(n * 2)
-        LofiEngine.preview(sounds, sr).render(out, n, 0)
+        LofiEngine.demo(sounds, 0.0, sr).render(out, n, 0)
         val clipped = out.count { abs(it.toInt()) >= 32767 }
         val rms = sqrt(out.sumOf { (it / 32768.0) * (it / 32768.0) } / out.size)
         assertTrue(clipped < out.size / 2000, "音割れ $clipped")
