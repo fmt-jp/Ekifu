@@ -9,6 +9,8 @@ enum class MusicStyle(val label: String) {
     FUSION("フュージョン"),
     /** 作曲はフュージョンのまま、音だけサウンドフォントの生楽器（音源が読めなければシンセの音で鳴らす） */
     BAND("生音フュージョン"),
+    /** ローファイ・ヒップホップ（段階7）。音源が読めなければシンセの音で鳴らす（加工はかける） */
+    LOFI("ローファイ"),
 }
 
 /**
@@ -55,16 +57,12 @@ object StyleEngines {
     /** ローファイの楽器が使えるか（音源が読めたか） */
     val lofiAvailable: Boolean get() = lofiSounds != null
 
-    /** 段階7bのローファイのデモ再生（ほかの曲調と同じ台本。7cで曲調の設定に入れる） */
-    fun lofiDemo(scriptStartSec: Double = 0.0, sampleRate: Int = MusicConstants.SAMPLE_RATE): SoundEngine =
-        LofiEngine.demo(lofiSounds, scriptStartSec, sampleRate).also { e ->
-            if (scriptStartSec > 0) DemoScript.COMMUTE.carryOverAt(scriptStartSec).let { s -> e.apply { s.applyTo(it) } }
-        }
 
     /** デモ再生のシード（曲調ごと。切り替えても同じ台本の続きを同じ曲で鳴らす） */
     fun demoSeed(style: MusicStyle): Int = when (style) {
         MusicStyle.HEALING -> MusicConstants.DEMO_SEED
         MusicStyle.FUSION, MusicStyle.BAND -> FusionConstants.DEMO_SEED
+        MusicStyle.LOFI -> LofiConstants.DEMO_SEED
     }
 
     /** デモ再生（台本は曲調によらず同じ）。scriptStartSec から続きを鳴らす */
@@ -97,6 +95,7 @@ object StyleEngines {
                 scriptStartSec,
             )
             MusicStyle.FUSION -> FusionEngine(seed, FusionComposerConfig(interludeEverySec = interlude), script, sampleRate, scriptStartSec)
+            MusicStyle.LOFI -> LofiEngine(seed, lofiSounds, LofiComposerConfig(interludeEverySec = interlude), script, sampleRate, scriptStartSec)
             MusicStyle.BAND -> FusionEngine(
                 seed, FusionComposerConfig(interludeEverySec = interlude), script, sampleRate, scriptStartSec, bandSounds,
             )

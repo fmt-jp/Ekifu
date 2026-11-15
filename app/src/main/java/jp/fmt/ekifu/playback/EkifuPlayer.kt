@@ -252,7 +252,6 @@ class EkifuPlayer(context: Context) : SimpleBasePlayer(Looper.getMainLooper()) {
         postedSubtitle = subtitle
         when (mode) {
             PlaybackMode.DEMO -> audio.prepare { StyleEngines.demo(style) }
-            PlaybackMode.LOFI_DEMO -> audio.prepare { StyleEngines.lofiDemo() }
             PlaybackMode.OMAKASE -> {
                 val src = SceneSource(
                     appContext,
@@ -287,8 +286,6 @@ class EkifuPlayer(context: Context) : SimpleBasePlayer(Looper.getMainLooper()) {
     private fun onStyleChanged(newStyle: MusicStyle) {
         if (!audio.isPrepared || ending) return
         if (newStyle == style) return
-        // ローファイのデモ（段階7b・開発用）は曲調の設定によらない
-        if (mode == PlaybackMode.LOFI_DEMO) return
         val src = scenes
         val demo = mode == PlaybackMode.DEMO
         val switched = audio.switchEngine { timelineSec ->
@@ -423,7 +420,6 @@ class EkifuPlayer(context: Context) : SimpleBasePlayer(Looper.getMainLooper()) {
         val m = when (mode) {
             PlaybackMode.OMAKASE -> SUBTITLE_OMAKASE
             PlaybackMode.DEMO -> SUBTITLE_DEMO
-            PlaybackMode.LOFI_DEMO -> return SUBTITLE_LOFI_DEMO
         }
         return "$m・${style.label}"
     }
@@ -432,7 +428,6 @@ class EkifuPlayer(context: Context) : SimpleBasePlayer(Looper.getMainLooper()) {
         const val TITLE = "ekifu"
         const val BAND_ASSET = "band.ekb"
         const val LOFI_ASSET = "lofi.ekb"
-        const val SUBTITLE_LOFI_DEMO = "デモ再生中・ローファイ"
         const val ARRIVE_NOT_PLAYING = "おまかせ再生中に使えます"
         const val ARRIVE_UNKNOWN = "近くの登録地点が分かりませんでした"
         const val MEDIA_ID = "ekifu"

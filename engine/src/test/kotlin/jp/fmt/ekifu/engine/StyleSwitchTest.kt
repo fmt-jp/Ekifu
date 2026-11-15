@@ -119,6 +119,8 @@ class StyleSwitchTest {
         fun out(e: SoundEngine) = ShortArray(n * 2).also { e.render(it, n) }
         assertContentEquals(out(MusicEngine.demo()), out(StyleEngines.demo(MusicStyle.HEALING)))
         assertContentEquals(out(FusionEngine.demo()), out(StyleEngines.demo(MusicStyle.FUSION)))
+        // ローファイ（テストでは音源を読まないのでシンセの音）
+        assertContentEquals(out(LofiEngine.demo(null)), out(StyleEngines.demo(MusicStyle.LOFI)))
     }
 
     @Test

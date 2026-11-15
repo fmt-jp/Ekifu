@@ -59,7 +59,6 @@ import kotlin.math.roundToInt
 fun PlayerScreen(
     onPlay: () -> Unit,
     onPlayDemo: () -> Unit,
-    onPlayLofiDemo: () -> Unit,
     onResume: () -> Unit,
     onPause: () -> Unit,
     onStop: () -> Unit,
@@ -142,7 +141,7 @@ fun PlayerScreen(
 
         if (debugVisible) {
             if (active && stream != null && status != null) DebugCard(ui, stream, status, nowMs)
-            DeveloperCard(ui, status, onPlayDemo, onPlayLofiDemo)
+            DeveloperCard(ui, status, onPlayDemo)
         }
     }
 }
@@ -199,12 +198,12 @@ private fun NowPlayingCard(ui: PlaybackBus.Ui, status: EngineStatus?, nowMs: Lon
                 }
             }
             val heat = status.composer.heat
-            if (ui.mode == PlaybackMode.DEMO || ui.mode == PlaybackMode.LOFI_DEMO) {
-                Text(if (ui.mode == PlaybackMode.LOFI_DEMO) "デモ再生（ローファイ）" else "デモ再生", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.tertiary)
+            if (ui.mode == PlaybackMode.DEMO) {
+                Text("デモ再生", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.tertiary)
                 status.demoCue?.let { cue ->
                     Text(cue.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     // 聞きどころは癒しの音で書いている
-                    if (heat == null) {
+                    if (status.composer.chord != null) {
                         Text(
                             "聞きどころ：${cue.hint}",
                             style = MaterialTheme.typography.bodyMedium,
@@ -379,7 +378,6 @@ private fun DeveloperCard(
     ui: PlaybackBus.Ui,
     status: EngineStatus?,
     onPlayDemo: () -> Unit,
-    onPlayLofiDemo: () -> Unit,
 ) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -389,17 +387,6 @@ private fun DeveloperCard(
             Text("開発用", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
             OutlinedButton(onClick = onPlayDemo, enabled = ui.state == PlaybackBus.State.IDLE) {
                 Text("デモ再生（自宅 → 公園 → 駅 → 職場）")
-            }
-            // 段階7b：ローファイで同じ台本を鳴らす（7cで曲調の設定に入れる）
-            OutlinedButton(onClick = onPlayLofiDemo, enabled = ui.state == PlaybackBus.State.IDLE) {
-                Text("ローファイのデモ再生")
-            }
-            if (ui.mode == PlaybackMode.LOFI_DEMO && ui.state != PlaybackBus.State.IDLE && status != null) {
-                val c = status.composer
-                Text(
-                    "${c.phase.label}・和音 ${c.chordLabel}・テンポ ${(60.0 / c.beatSec).roundToInt()}・こもり ${c.masterCutoffHz.roundToInt()}Hz",
-                    style = MaterialTheme.typography.bodySmall,
-                )
             }
             if (ui.mode == PlaybackMode.OMAKASE || ui.state == PlaybackBus.State.IDLE) return@Column
             DemoScript.COMMUTE.cues.forEach { cue ->

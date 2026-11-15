@@ -15,8 +15,8 @@ android {
         applicationId = "jp.fmt.ekifu"
         minSdk = 26
         targetSdk = 35
-        versionCode = 27
-        versionName = "0.11.0-lofi7b"
+        versionCode = 28
+        versionName = "0.12.0"
     }
 
     signingConfigs {

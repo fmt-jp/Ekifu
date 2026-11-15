@@ -281,6 +281,7 @@ private fun styleDescription(style: MusicStyle) = when (style) {
     MusicStyle.HEALING -> "パッドとベルの穏やかなインストゥルメンタル"
     MusicStyle.FUSION -> "明るいバンド編成のフュージョン。移動の速さで盛り上がりが変わる"
     MusicStyle.BAND -> "フュージョンを生楽器（アルトサックス・エレピ・ベース・ドラム）で"
+    MusicStyle.LOFI -> "ゆったり跳ねるビートにエレピとピアノ。テープの揺れとレコードのノイズ"
 }
 
 /** 到着の知らせ方：音・読み上げ・両方 */
