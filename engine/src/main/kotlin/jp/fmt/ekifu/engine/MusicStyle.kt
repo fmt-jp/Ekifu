@@ -45,6 +45,19 @@ object StyleEngines {
     /** 生音フュージョンの楽器が使えるか（音源が読めたか） */
     val bandAvailable: Boolean get() = bandSounds != null
 
+    /** ローファイの音源を読む関数（アプリが assets の lofi.ekb から読む）。読めなければシンセの音で鳴らす */
+    @Volatile var lofiBankLoader: (() -> SampleBank?)? = null
+
+    private val lofiSounds: BandSounds? by lazy {
+        runCatching { lofiBankLoader?.invoke()?.let { BandSounds(it, LofiConstants.KIT) } }.getOrNull()
+    }
+
+    /** ローファイの楽器が使えるか（音源が読めたか） */
+    val lofiAvailable: Boolean get() = lofiSounds != null
+
+    /** 段階7aのローファイの音色デモ（場面を8小節ごとに切り替える） */
+    fun lofiPreview(sampleRate: Int = MusicConstants.SAMPLE_RATE): SoundEngine = LofiEngine.preview(lofiSounds, sampleRate)
+
     /** デモ再生のシード（曲調ごと。切り替えても同じ台本の続きを同じ曲で鳴らす） */
     fun demoSeed(style: MusicStyle): Int = when (style) {
         MusicStyle.HEALING -> MusicConstants.DEMO_SEED

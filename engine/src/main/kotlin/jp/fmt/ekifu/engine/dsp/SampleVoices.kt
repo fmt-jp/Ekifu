@@ -1,6 +1,7 @@
 package jp.fmt.ekifu.engine.dsp
 
 import jp.fmt.ekifu.engine.BandConstants as B
+import jp.fmt.ekifu.engine.BandKit
 import jp.fmt.ekifu.engine.FusionConstants as F
 import jp.fmt.ekifu.engine.sf2.BankPreset
 import jp.fmt.ekifu.engine.sf2.BankZone
@@ -148,12 +149,12 @@ internal class ZonePlayer(
 internal fun midiVelocity(v: Double) = (v * 127).roundToInt().coerceIn(1, 127)
 internal fun velocityGain(v: Double) = v.coerceIn(0.0, 1.0).pow(B.VELOCITY_EXPONENT)
 
-/** 鳴らす楽器を音源から引く */
-class BandSounds(val bank: SampleBank) {
-    val lead: BankPreset = bank.preset(B.LEAD_BANK, B.LEAD_PROGRAM) ?: error("リードの楽器がない")
-    val keys: BankPreset = bank.preset(B.KEYS_BANK, B.KEYS_PROGRAM) ?: error("鍵盤の楽器がない")
-    val bass: BankPreset = bank.preset(B.BASS_BANK, B.BASS_PROGRAM) ?: error("ベースの楽器がない")
-    val drums: BankPreset = bank.preset(B.DRUM_BANK, B.DRUM_PROGRAM) ?: error("ドラムセットがない")
+/** 鳴らす楽器を音源から引く（kit：どの楽器をどの音量で鳴らすか） */
+class BandSounds(val bank: SampleBank, val kit: BandKit = B.KIT) {
+    val lead: BankPreset = bank.preset(kit.lead.first, kit.lead.second) ?: error("リードの楽器がない")
+    val keys: BankPreset = bank.preset(kit.keys.first, kit.keys.second) ?: error("鍵盤の楽器がない")
+    val bass: BankPreset = bank.preset(kit.bass.first, kit.bass.second) ?: error("ベースの楽器がない")
+    val drums: BankPreset = bank.preset(kit.drums.first, kit.drums.second) ?: error("ドラムセットがない")
 
     internal fun players(preset: BankPreset, key: Int, velocity: Double, sampleRate: Int, gain: Double): List<ZonePlayer> {
         val zones = preset.zonesFor(key, midiVelocity(velocity))
@@ -231,7 +232,7 @@ class SampleLead(private val sampleRate: Int, private val sounds: BandSounds) : 
             pitch = midi
             glideLeft = 0
         }
-        current = sounds.players(sounds.lead, midi.roundToInt(), velocity, sampleRate, B.LEAD_GAIN)
+        current = sounds.players(sounds.lead, midi.roundToInt(), velocity, sampleRate, sounds.kit.leadGain)
         current.forEach { it.setPitch(pitch) }
         vibDepth = 0.0
         vibTarget = vibratoCents

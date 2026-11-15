@@ -13,6 +13,7 @@ import jp.fmt.ekifu.engine.dsp.FusionVoice
 import jp.fmt.ekifu.engine.dsp.LeadSound
 import jp.fmt.ekifu.engine.dsp.LeadVoice
 import jp.fmt.ekifu.engine.dsp.Limiter
+import jp.fmt.ekifu.engine.dsp.LofiFx
 import jp.fmt.ekifu.engine.dsp.MembraneVoice
 import jp.fmt.ekifu.engine.dsp.NoiseVoice
 import jp.fmt.ekifu.engine.dsp.SampleLead
@@ -25,7 +26,6 @@ import java.util.PriorityQueue
 import kotlin.math.abs
 import kotlin.math.roundToLong
 import kotlin.math.tanh
-import jp.fmt.ekifu.engine.BandConstants as B
 import jp.fmt.ekifu.engine.FusionConstants as F
 import jp.fmt.ekifu.engine.MusicConstants as C
 
@@ -38,6 +38,8 @@ class FusionSynth(
     noiseSeed: Int = 1,
     /** 生音フュージョン：鍵盤・ベース・ドラム・リードをサウンドフォントの楽器で鳴らす（null ならシンセの音） */
     private val sounds: BandSounds? = null,
+    /** ローファイ：全体にテープの揺れ・飽和・レコードのノイズをかける */
+    private val lofi: Boolean = false,
 ) : Renderer {
 
     /** リードのイベントを発音・音程移動・消音に分けたもの */
@@ -71,10 +73,10 @@ class FusionSynth(
     /** 地点のテーマのベル（癒しと同じ音色） */
     private var bells = ArrayList<Voice>()
 
-    private var brassLp = Biquad(sampleRate, if (sounds != null) B.KEYS_LOWPASS_HZ else F.BRASS_LOWPASS_HZ)
+    private var brassLp = Biquad(sampleRate, sounds?.kit?.keysLowpassHz ?: F.BRASS_LOWPASS_HZ)
     private var chorus = Chorus(sampleRate)
-    private var bassLp = Biquad(sampleRate, if (sounds != null) B.BASS_LOWPASS_HZ else F.BASS_LOWPASS_HZ)
-    private var leadLp = Biquad(sampleRate, if (sounds != null) B.LEAD_LOWPASS_HZ else F.LEAD_POST_LOWPASS_HZ)
+    private var bassLp = Biquad(sampleRate, sounds?.kit?.bassLowpassHz ?: F.BASS_LOWPASS_HZ)
+    private var leadLp = Biquad(sampleRate, sounds?.kit?.leadLowpassHz ?: F.LEAD_POST_LOWPASS_HZ)
     private var delay = StereoDelay(
         sampleRate,
         maxDelaySec = 60.0 / F.MIN_BPM / 4 * F.DELAY_STEPS,
@@ -88,6 +90,7 @@ class FusionSynth(
         sampleRate, F.COMP_THRESHOLD_DB, F.COMP_RATIO, F.COMP_ATTACK_SEC, F.COMP_RELEASE_SEC, 0.0,
     )
     private var limiter = Limiter(sampleRate)
+    private var lofiFx: LofiFx? = if (lofi) LofiFx(sampleRate, noiseSeed) else null
 
     private var fade = 1.0
     private var fadeStep = 0.0
@@ -125,7 +128,8 @@ class FusionSynth(
         queue += Scheduled(f, order++, action)
     }
 
-    fun copy(): FusionSynth = FusionSynth(sampleRate, sounds = sounds).also {
+    fun copy(): FusionSynth = FusionSynth(sampleRate, sounds = sounds, lofi = lofi).also {
+        it.lofiFx = lofiFx?.copy()
         it.queue = PriorityQueue(queue)
         it.order = order
         it.noiseSeed = noiseSeed
@@ -206,6 +210,11 @@ class FusionSynth(
 
             l = masterL.process(l)
             r = masterR.process(r)
+            lofiFx?.let { fx ->
+                fx.process(l, r)
+                l = fx.outL
+                r = fx.outR
+            }
             val cg = compressor.gainFor(l, r)
             l *= cg
             r *= cg
@@ -244,8 +253,8 @@ class FusionSynth(
                 val s = sounds
                 if (s != null) {
                     when (action.part) {
-                        PolyPart.BRASS -> brass += SampleVoice(s, s.keys, action.midi, action.velocity, sampleRate, B.KEYS_GAIN, frames)
-                        PolyPart.BASS -> bass += SampleVoice(s, s.bass, action.midi, action.velocity, sampleRate, B.BASS_GAIN, frames)
+                        PolyPart.BRASS -> brass += SampleVoice(s, s.keys, action.midi, action.velocity, sampleRate, s.kit.keysGain, frames)
+                        PolyPart.BASS -> bass += SampleVoice(s, s.bass, action.midi, action.velocity, sampleRate, s.kit.bassGain, frames)
                     }
                     return
                 }
@@ -263,6 +272,7 @@ class FusionSynth(
                 delay.feedback = action.delayFeedback
             }
             is BellNote -> bells += BellVoice(sampleRate, Scale.midiToHz(action.midi.toDouble()), action.gain, F.BELL_PAN)
+            is LofiControl -> lofiFx?.noiseFactor = action.noiseFactor
             is FusionFadeOut -> fadeStep = 1.0 / (action.durationSec * sampleRate)
         }
     }
@@ -306,24 +316,9 @@ class FusionSynth(
 
     /** 生音のドラム：General MIDI の鍵盤で鳴らす。ハイハットは開けたものを閉じたもので止める */
     private fun addSampledDrum(s: BandSounds, d: DrumHit) {
-        val key = when (d.kind) {
-            DrumKind.KICK -> B.KICK_KEY
-            DrumKind.SNARE -> B.SNARE_KEY
-            DrumKind.HAT -> B.HAT_KEY
-            DrumKind.OPEN_HAT -> B.OPEN_HAT_KEY
-            DrumKind.TOM_HIGH -> B.TOM_HIGH_KEY
-            DrumKind.TOM_MID -> B.TOM_MID_KEY
-            DrumKind.TOM_LOW -> B.TOM_LOW_KEY
-            DrumKind.CRASH -> B.CRASH_KEY
-        }
+        val key = s.kit.drumKeys[d.kind] ?: return
         val hat = d.kind == DrumKind.HAT || d.kind == DrumKind.OPEN_HAT
-        val gain = when (d.kind) {
-            DrumKind.KICK -> B.KICK_GAIN
-            DrumKind.SNARE -> B.SNARE_GAIN
-            DrumKind.HAT, DrumKind.OPEN_HAT -> B.HAT_GAIN
-            DrumKind.CRASH -> B.CRASH_GAIN
-            else -> B.TOM_GAIN
-        }
+        val gain = s.kit.drumGains[d.kind] ?: return
         val v = SampleVoice(s, s.drums, key, d.velocity, sampleRate, gain, Long.MAX_VALUE, d.pitchFactor)
         if (hat) {
             if (d.kind == DrumKind.HAT) hats.forEach { it.release() }

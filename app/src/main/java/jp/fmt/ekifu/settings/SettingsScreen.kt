@@ -158,7 +158,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Text(
-                    "生音フュージョンの音源：GeneralUser GS v2.0.3（S. Christian Collins）",
+                    "生音フュージョン・ローファイの音源：GeneralUser GS v2.0.3（S. Christian Collins）",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
