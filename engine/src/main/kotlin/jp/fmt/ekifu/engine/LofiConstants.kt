@@ -28,8 +28,8 @@ object LofiConstants {
         drumKeys = mapOf(
             DrumKind.KICK to 36, DrumKind.SNARE to 38, DrumKind.HAT to 42, DrumKind.OPEN_HAT to 46, DrumKind.CRASH to 49,
         ),
-        leadGain = db(-10.0),
-        keysGain = db(-4.0),
+        leadGain = db(0.0),
+        keysGain = db(3.0),
         bassGain = db(0.0),
         drumGains = mapOf(
             DrumKind.KICK to db(-2.0), DrumKind.SNARE to db(-9.0), DrumKind.HAT to db(-14.0),
@@ -102,10 +102,10 @@ object LofiConstants {
     /** 低音を少し削る（ラジカセっぽさ） */
     const val HIGHPASS_HZ = 45.0
     /** レコードのノイズ：ヒス（サー）とプチプチ */
-    val HISS_GAIN = db(-50.0)
+    val HISS_GAIN = db(-56.0)
     const val HISS_LOWPASS_HZ = 5000.0
     const val CRACKLE_PER_SEC = 3.5
-    val CRACKLE_GAIN = db(-28.0)
+    val CRACKLE_GAIN = db(-33.0)
     const val CRACKLE_DECAY_SEC = 0.0015
 
     // ---- 空間 ----
