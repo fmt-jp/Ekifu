@@ -45,9 +45,10 @@
 | 4. 登録地点 | 地点の一覧・登録画面と保存、取得間隔の切替、接近・到着・離脱の判定と演出 | 外側の円に入って2分以内に接近演出、内側の円で到着演出 |
 | 5. 仕上げ | 画面デザイン、オーディオフォーカス、イヤホン抜け、設定画面 | 11章の受け入れ基準をすべて満たす |
 
-## 現在の進捗（2026-09-28 時点）
+## 現在の進捗（2026-11-16 時点）
 
-- 最新：ブランチ `claude/sound-reproduction-apk-z07wmk`、v0.15.0（versionCode 32）、APK は GitHub Actions の成果物 `ekifu-debug-apk-<実行番号>`。エンジンの単体テスト180件はすべて通過
+- 最新：ブランチ `claude/sound-reproduction-apk-z07wmk`、v0.15.0（versionCode 32）、APK は GitHub Actions の成果物 `ekifu-debug-apk-<実行番号>`（v0.15.0 は `ekifu-debug-apk-48`）。エンジンの単体テスト180件はすべて通過
+- 曲調は5つ：癒し・フュージョン・生音フュージョン・ローファイ・アンビエント（設定の「曲調」で選ぶ。再生中も切り替えられる）
 - SPEC 10章の段階1〜5（音の再現・画面オフ再生・おまかせ再生・登録地点・仕上げ）：完了し、実機で確認済み
 - SPEC 12章 曲調「フュージョン」の段階6a（音色）・6b（作曲）・6c（曲調の設定と再生中の切り替え）：完了
 - 12章のあと、外での試用を受けて入れた改善（詳細は下の「ユーザーと決めたこと」）
@@ -55,54 +56,50 @@
   - 登録地点のテーマを試聴と同じ音の並びでリードが吹き、ベルでも重ねる。外側の円に入った最初の2小節はブレイク＋ベル
   - 乗り物のあいだは1分ごとに場面を確かめる
   - 到着中は内側の円の1.2倍を出たら離れる。30分以内の再到着は演出なしで滞在に戻る
-  - 登録地点の1.5km以内は GPS・15秒ごと、到着したあとは省電力・1分ごと。判定は位置の誤差を見込む
+  - 登録地点の1.5km以内は GPS・15秒ごと（乗り物は3km以内）、到着したあとは省電力・1分ごと。判定は位置の誤差を見込む
   - フュージョンは地点の判定を次の小節から音に出す（ブロックの終わりを待たない）
-  - 接近・到着でスマホを振動させる。デバッグ表示に「演出の記録」
-  - 乗り物のあいだは登録地点の3km以内から GPS に切り替える（電車で駅に止まっても到着にならなかったため）
-  - 設定に「位置の取り方」を追加（おまかせ：電池優先・標準・精度優先、カスタムで項目ごと）
-  - 到着の合図を追加（両方の曲調。曲を一瞬止めてベルの上りの3音）
-  - 曲調「生音フュージョン」を追加（作曲はフュージョン、音はサウンドフォント GeneralUser GS の生楽器）。サックスを下げたあとの音のバランスは 2026-11 に実機で確認済み
-  - 地下の駅で登録地点を見分けるため、携帯の基地局を地点ごとに覚えて使う。「着いた」ボタン（通知・再生画面）。試用で、基地局の表示は出たが「着いた」が鳴らず自動の到着が遅かったため v0.8.1 で手直し（実機での確認がまだ）
-  - 設定に「到着の知らせ方」（音・読み上げ・両方）。地点に「読み（ひらがな）」の欄（DB 版4）。2026-11 の外での試用で、読み上げ（曲の音量を下げる）と地点の読みを実機で確認済み
-  - 設定に「振動」のオン・オフ（v0.9.1）
-- 段階7 曲調「ローファイ・ヒップホップ」（ユーザーと決めた3段階：7a 音色とビート → 7b 作曲と地点の演出 → 7c 曲調の設定に追加・仕上げ）
-  - 7a（音色とビート・開発用の「ローファイの音色デモ」）：作った。実機で聞いてもらい、ノイズ・ピアノ・エレピの音量を直し、実機で確認済み
-  - 7b（作曲と地点の演出）：作り、実機で確認済み
-  - 7c（曲調の設定に「ローファイ」を追加。開発用のローファイのデモ再生はなくし、デモ再生は曲調の設定に従う）：作った。実機での確認がまだ
-- 段階8 曲調「アンビエント」（ユーザーと決めた3段階：8a 音色 → 8b 作曲と地点の演出 → 8c 曲調の設定に追加）
-  - 8a（パッド・ドローン・粒・ピアノと深いリバーブ）：作った
-  - 8b（作曲と地点の演出）：作り、実機で確認済み
-  - 8c（曲調の設定に「アンビエント」を追加。開発用のアンビエントのデモ再生はなくし、デモ再生は曲調の設定に従う）：作った。実機での確認がまだ
-- 2026-10 の外での試用：GPS・振動・ブレイク＋ベル・到着後の省電力は動いたが、「移動しても音が変わらない」「電車で駅に止まっても到着にならない」が残った。乗り物での GPS の早めの切り替えは、実機での確認がまだ
+  - 接近・到着でスマホを振動させる（設定でオン・オフ）。デバッグ表示に「演出の記録」「判定の記録」
+  - 設定に「位置の取り方」（おまかせ：電池優先・標準・精度優先、カスタムで項目ごと）
+  - 到着の合図（曲を一瞬止めてベルの上りの3音）。設定の「到着の知らせ方」で音・読み上げ・両方。地点に「読み（ひらがな）」の欄（DB 版4）。読み上げと読みは実機で確認済み
+  - 曲調「生音フュージョン」（サウンドフォント GeneralUser GS の生楽器）。音のバランスは実機で確認済み
+  - 地下の駅で登録地点を見分けるため、携帯の基地局を地点ごとに覚えて使う。「着いた」ボタン（通知・再生画面）。v0.8.1 の手直し（粗い位置は使わない・「着いた」は毎回鳴らす）は実機での確認がまだ
+- 段階7 曲調「ローファイ・ヒップホップ」（7a 音色とビート → 7b 作曲と地点の演出 → 7c 曲調の設定に追加）：7a・7b は実機で確認済み、全体の音量を＋8dB してほかの曲調とそろえた。7c は実機での確認がまだ
+- 段階8 曲調「アンビエント」（8a 音色 → 8b 作曲と地点の演出 → 8c 曲調の設定に追加）：8a・8b は確認済み。8c は実機での確認がまだ
+- 2026-10 の外での試用で残った問題：「移動しても音が変わらない」「電車で駅に止まっても到着にならない」。乗り物での GPS の早めの切り替えは実機での確認がまだ
 
 ## 設計方針（コードの構成）
 
 - `engine/`：Android に依存しない Kotlin（手元で `gradle :engine:test`）。`app/`：Android（Compose・Media3・Room・osmdroid。ビルドは CI）
-- 作曲（音符イベント）と合成（波形）を分ける。曲調ごとのエンジンは `SoundEngine`（`MusicEngine`＝癒し：`Composer`＋`Synth`、`FusionEngine`＝フュージョン・生音フュージョン：`FusionComposer`＋`FusionSynth`、`LofiEngine`＝ローファイ：`LofiComposer`＋`FusionSynth`、`AmbientEngine`＝アンビエント：`AmbientComposer`＋`AmbientSynth`）。作るのは `StyleEngines`
-- `ChunkStream`：10秒チャンクを先回りで作り、30〜60秒を作り置く。入力（場面・地点）が来たら1秒以上先を捨てて、チャンクの頭で保存したエンジンの複製から作り直す。曲調の切り替え（`switchEngine`）は2秒でフェードアウトして新しいエンジンへ。終わりとバッファ不足のつなぎの音はエンジンから受け取る
-- `FusionComposer`：8小節のブロック単位で作る。2小節目以降は各小節を鳴る直前まで持ち、地点の判定が来たら次の小節をつなぎにして新しいブロックを始める。キメ・つなぎの乱数は本体と別（`kimeRng`）
-- ローファイ（段階7）：`LofiComposer`（1小節ずつ鳴る直前に作るので、場面・地点の入力は次の小節から音に出る。8小節のブロックで、入力が来たら次の小節から新しいブロック）→ `FusionSynth` をローファイの楽器（`LofiConstants.KIT`、assets の `lofi.ekb`）と加工（`dsp/LofiFx`：テープの揺れ・飽和・低音カット・レコードのノイズ。`lofi = true`）で使う。エンジンは `LofiEngine`。楽器セットは `BandKit`（生音フュージョンは `BandConstants.KIT`）。音源の作り直しは `gradle :engine:makeBandBank --args="<sf2> app/src/main/assets/lofi.ekb lofi"`
-- アンビエント（段階8）：`AmbientComposer`（和音ごとに作る。拍はない。地点の判定が来たら `react` で鳴っている和音を1.5秒後に切り上げ、`AmbCut` で予定の音を取り消してパッドを余韻に入らせ、次の和音で演出する）→ `AmbientSynth`（自前のパッド・ドローン・粒は `dsp/AmbientVoices.kt`、ピアノはローファイの音源の Grand Piano。残響7秒のリバーブと長いディレイ）。エンジンは `AmbientEngine`、値は `AmbientConstants`
-- 生音フュージョン：`sf2/Sf2Reader`（SF2 を読み、使うプリセットのゾーンを平らにする）→ `sf2/SampleBank`（アプリに入れる音源。`app/src/main/assets/band.ekb`）。作り直しは `gradle :engine:makeBandBank --args="<GeneralUser-GS.sf2> <band.ekb>"`。鳴らすのは `dsp/SampleVoices.kt`（`SampleVoice`・`SampleLead`）で、`FusionSynth` に `BandSounds` を渡すと鍵盤・ベース・ドラム・リードが生楽器になる（効果・ベルはそのまま）。音源はアプリが起動時に裏で読み、`StyleEngines.bandBankLoader` で渡す
-- 再生：`PlaybackService`（Media3 `MediaSessionService`、フォアグラウンド。location 種別を付け足す）→ `EkifuPlayer`（`SimpleBasePlayer`）→ `StreamPlayer`（合成スレッド＋AudioTrack 書き込みスレッド）。画面へは `PlaybackBus`
-- 基地局：`CellReader`（app。TelephonyManager で見えている基地局を読む）→ `CellBook`（engine。地点ごとに覚えた基地局）・`PlaceTracker.updateByCell`／`forceArrive`。保存は Room の `place_cells`（DB 版3）
-- 位置と場面：`SceneSource`（Fused Location）→ `SceneDecider`（場面）・`SceneTiming`（区切りの間隔・位置の取り方）・`PlaceTracker`（接近・到着・離れる）→ `applyPlaceEvents` で作曲へ。振動は `PlaceHaptics`
-- 到着の読み上げ：`ArrivalSpeaker`（app。TextToSpeech、端末内の日本語の声だけ）。作曲へは `ComposerInput.setArrivalChime`（読み上げだけなら合図のベルを鳴らさない）。到着の演出には通し番号（`ComposerStatus.arrival`）があり、`EkifuPlayer` が再生位置で番号が変わったのを見て読む。読むあいだは `StreamPlayer.duck` で曲の音量を下げる
-- 設定は `AppSettings`（SharedPreferences：曲調・デバッグ表示・位置の取り方・到着の知らせ方・振動）。位置の取り方は `LocationPolicy`（エンジン側。`SceneTiming` が受け取る）。保存は Room（登録地点・訪問履歴）
-- 乱数はシード付き（Mulberry32）で、同じ入力なら同じ曲。音の値は `MusicConstants.kt`・`FusionConstants.kt`・`PlaceConstants.kt` に集め、仕様にない値は「仕様外・要調整」と書く
+- 作曲（音符イベント）と合成（波形）を分ける。曲調ごとのエンジンは `SoundEngine` で、作るのは `StyleEngines`（`MusicStyle` ごと）
+  - 癒し：`MusicEngine`（`Composer`＋`Synth`）
+  - フュージョン・生音フュージョン：`FusionEngine`（`FusionComposer`＋`FusionSynth`。生音は `BandSounds` を渡す）
+  - ローファイ：`LofiEngine`（`LofiComposer`＋`FusionSynth` を `lofi = true` で。加工は `dsp/LofiFx`）
+  - アンビエント：`AmbientEngine`（`AmbientComposer`＋`AmbientSynth`。パッド・ドローン・粒は `dsp/AmbientVoices.kt`）
+- 作曲への入力は `ComposerInput`（場面・接近・到着・離れる・滞在・始まりのあと接近・到着の合図のベルの有無）。曲調を切り替えるときは `CarryOver` で場面と地点の状態を引き継ぐ
+- 地点の判定への反応：フュージョンは次の小節をつなぎにして新しいブロック、ローファイは1小節ずつ鳴る直前に作るので次の小節から、アンビエントは `react` で鳴っている和音を1.5秒後に切り上げ（`AmbCut`）
+- `ChunkStream`：10秒チャンクを先回りで作り、30〜60秒を作り置く。入力が来たら1秒以上先を捨てて、チャンクの頭で保存したエンジンの複製から作り直す。曲調の切り替え（`switchEngine`）は2秒でフェードアウトして新しいエンジンへ。終わりとバッファ不足のつなぎの音はエンジンから受け取る
+- 生楽器の音源：`sf2/Sf2Reader`（SF2 を読み、使うプリセットのゾーンを平らにする）→ `sf2/SampleBank`（assets の `band.ekb`＝生音フュージョン約2MB、`lofi.ekb`＝ローファイ・アンビエントのピアノ約3.4MB）。楽器セットは `BandKit`（`BandConstants.KIT`・`LofiConstants.KIT`）。作り直しは `gradle :engine:makeBandBank --args="<GeneralUser-GS.sf2> <出力.ekb> [band|lofi]"`（SF2 はリポジトリの履歴の `sound/GeneralUser_GS_v2.0.3--doc_r6.zip` の中）。鳴らすのは `dsp/SampleVoices.kt`（`SampleVoice`・`SampleLead`）。音源はアプリが起動時に裏で読み、`StyleEngines.bandBankLoader`・`lofiBankLoader` で渡す。読めなければシンセの音で鳴らす
+- 再生：`PlaybackService`（Media3 `MediaSessionService`、フォアグラウンド。location 種別を付け足す）→ `EkifuPlayer`（`SimpleBasePlayer`）→ `StreamPlayer`（合成スレッド＋AudioTrack 書き込みスレッド。読み上げのあいだは `duck`）。画面へは `PlaybackBus`
+- 位置と場面：`SceneSource`（Fused Location と15秒ごとの基地局）→ `SceneDecider`（場面）・`SceneTiming`（区切りの間隔・位置の取り方・位置が取れていないか）・`PlaceTracker`（接近・到着・離れる、基地局・「着いた」での到着）→ `applyPlaceEvents` で作曲へ。振動は `PlaceHaptics`
+- 基地局：`CellReader`（app）→ `CellBook`（engine）。保存は Room の `place_cells`
+- 到着の読み上げ：`ArrivalSpeaker`（TextToSpeech、端末内の日本語の声だけ）。到着の演出には通し番号（`ComposerStatus.arrival`）があり、`EkifuPlayer` が再生位置で番号が変わったのを見て読む
+- 保存：Room（DB 版4。登録地点＋読み、訪問履歴、地点ごとの基地局）。設定は `AppSettings`（SharedPreferences：曲調・デバッグ表示・位置の取り方・到着の知らせ方・振動）。位置の取り方は `LocationPolicy`（エンジン側）
+- 乱数はシード付き（Mulberry32）で、同じ入力なら同じ曲。音の値は `MusicConstants`・`FusionConstants`・`BandConstants`・`LofiConstants`・`AmbientConstants`・`PlaceConstants` に集め、仕様にない値は「仕様外・要調整」と書く
 - 作曲・場面の決定・接近の判定には単体テストを書く。変更ごとに README.md に実機での確認手順を追記し、決めたことは下の「ユーザーと決めたこと」に残す
 
 ## 残りの TODO
 
+- [ ] 実機での確認：曲調の設定のローファイ（7c）・アンビエント（8c）、地下の駅での基地局の到着と「着いた」（v0.8.1）、乗り物での GPS の早めの切り替え、振動のオン・オフ
 - [ ] 電車で駅に止まったときに到着になるかの確認（乗り物は3kmから GPS）。だめなら、駅の内側の円を200〜300mに広げる・停車で到着とみなす、を検討（ユーザーに確認済みの案）
 - [ ] 「移動しても音が変わらない」：歩きは場面の見直しが5分ごとで、マス（約1.2km×0.6km）がなかなか変わらない。楽器の音色は場所では変えていない。どう変えるかはユーザーと相談
 - [ ] 登録地点から遠いあいだは位置が5分ごと（乗り物は1分）なので、1.5km圏（乗り物は3km圏）に入ったことに気づくのが遅れる
 - [ ] 電池の減りの実測（Android の「電池使用量」で、地点の近くで再生した日とそうでない日を比べる）
 - [ ] 判定から音が変わるまで、まだ最大十数秒かかる（作り置きの作り直し最大約11秒＋小節待ち）。気になるなら作り置きの見直し
-- [ ] 曲調「癒し」には、入った瞬間のブレイク＋ベルと滞在中のベルが入っていない（GPS・振動・判定の改善は両方の曲調に効いている）
+- [ ] 曲調「癒し」には、入った瞬間のブレイク＋ベルと滞在中のベルが入っていない（ほかの曲調には入っている）
 - [ ] 一時停止のあとロック画面・通知から再開したとき、画面オフ中に位置が取れるかを確認（location 種別を付け直せない可能性）
 - [ ] 乗り物だと分かるまで最初は最大5分かかる
-- [ ] 仮の値の調整：ベルの音量、テーマの速さ（いまは四分音符）、キメの型の重み、振動の長さ
+- [ ] 仮の値の調整：ベルの音量、テーマの速さ（いまは四分音符）、キメの型の重み、振動の長さ、読み上げのタイミングと曲の下げ方、ローファイ・アンビエントの値
+- [ ] 曲調ごとの全体の音量をそろえ続ける（測ると癒し・フュージョン・ローファイ・アンビエントは約−19dB でそろっている。生音フュージョンは未測定）
 - [ ] 決めたことの SPEC.md 本体への反映（いまは CLAUDE.md にだけある）
 - [ ] README.md の整理（確認手順が追記の積み重ねで長い）
 - [ ] 11章の受け入れ基準を、12章以降の変更も含めて確認し直す
