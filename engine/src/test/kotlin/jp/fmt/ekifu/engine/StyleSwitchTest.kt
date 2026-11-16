@@ -121,6 +121,7 @@ class StyleSwitchTest {
         assertContentEquals(out(FusionEngine.demo()), out(StyleEngines.demo(MusicStyle.FUSION)))
         // ローファイ（テストでは音源を読まないのでシンセの音）
         assertContentEquals(out(LofiEngine.demo(null)), out(StyleEngines.demo(MusicStyle.LOFI)))
+        assertContentEquals(out(AmbientEngine.demo(null)), out(StyleEngines.demo(MusicStyle.AMBIENT)))
     }
 
     @Test

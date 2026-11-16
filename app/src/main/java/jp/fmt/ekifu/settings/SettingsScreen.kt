@@ -158,7 +158,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Text(
-                    "生音フュージョン・ローファイの音源：GeneralUser GS v2.0.3（S. Christian Collins）",
+                    "生音フュージョン・ローファイ・アンビエントの音源：GeneralUser GS v2.0.3（S. Christian Collins）",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -282,6 +282,7 @@ private fun styleDescription(style: MusicStyle) = when (style) {
     MusicStyle.FUSION -> "明るいバンド編成のフュージョン。移動の速さで盛り上がりが変わる"
     MusicStyle.BAND -> "フュージョンを生楽器（アルトサックス・エレピ・ベース・ドラム）で"
     MusicStyle.LOFI -> "ゆったり跳ねるビートにエレピとピアノ。テープの揺れとレコードのノイズ"
+    MusicStyle.AMBIENT -> "拍のない、ゆっくり変わる音の層。深い残響にピアノと音の粒"
 }
 
 /** 到着の知らせ方：音・読み上げ・両方 */

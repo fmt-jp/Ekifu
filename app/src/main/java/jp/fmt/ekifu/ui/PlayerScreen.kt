@@ -59,7 +59,6 @@ import kotlin.math.roundToInt
 fun PlayerScreen(
     onPlay: () -> Unit,
     onPlayDemo: () -> Unit,
-    onPlayAmbientDemo: () -> Unit,
     onResume: () -> Unit,
     onPause: () -> Unit,
     onStop: () -> Unit,
@@ -142,7 +141,7 @@ fun PlayerScreen(
 
         if (debugVisible) {
             if (active && stream != null && status != null) DebugCard(ui, stream, status, nowMs)
-            DeveloperCard(ui, status, onPlayDemo, onPlayAmbientDemo)
+            DeveloperCard(ui, status, onPlayDemo)
         }
     }
 }
@@ -199,8 +198,8 @@ private fun NowPlayingCard(ui: PlaybackBus.Ui, status: EngineStatus?, nowMs: Lon
                 }
             }
             val heat = status.composer.heat
-            if (ui.mode == PlaybackMode.DEMO || ui.mode == PlaybackMode.AMBIENT_DEMO) {
-                Text(if (ui.mode == PlaybackMode.AMBIENT_DEMO) "デモ再生（アンビエント）" else "デモ再生", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.tertiary)
+            if (ui.mode == PlaybackMode.DEMO) {
+                Text("デモ再生", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.tertiary)
                 status.demoCue?.let { cue ->
                     Text(cue.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     // 聞きどころは癒しの音で書いている
@@ -379,7 +378,6 @@ private fun DeveloperCard(
     ui: PlaybackBus.Ui,
     status: EngineStatus?,
     onPlayDemo: () -> Unit,
-    onPlayAmbientDemo: () -> Unit,
 ) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -389,17 +387,6 @@ private fun DeveloperCard(
             Text("開発用", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
             OutlinedButton(onClick = onPlayDemo, enabled = ui.state == PlaybackBus.State.IDLE) {
                 Text("デモ再生（自宅 → 公園 → 駅 → 職場）")
-            }
-            // 段階8b：アンビエントで同じ台本を鳴らす（8cで曲調の設定に入れる）
-            OutlinedButton(onClick = onPlayAmbientDemo, enabled = ui.state == PlaybackBus.State.IDLE) {
-                Text("アンビエントのデモ再生")
-            }
-            if (ui.mode == PlaybackMode.AMBIENT_DEMO && ui.state != PlaybackBus.State.IDLE && status != null) {
-                val c = status.composer
-                Text(
-                    "${c.phase.label}・和音 ${c.chordLabel}（${c.beatSec.roundToInt()}秒）・粒 ${"%.2f".format(c.noteProb)}／秒・明るさ ${c.masterCutoffHz.roundToInt()}Hz",
-                    style = MaterialTheme.typography.bodySmall,
-                )
             }
             if (ui.mode == PlaybackMode.OMAKASE || ui.state == PlaybackBus.State.IDLE) return@Column
             DemoScript.COMMUTE.cues.forEach { cue ->
