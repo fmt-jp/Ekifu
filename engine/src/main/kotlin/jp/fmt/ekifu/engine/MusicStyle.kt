@@ -57,6 +57,9 @@ object StyleEngines {
     /** ローファイの楽器が使えるか（音源が読めたか） */
     val lofiAvailable: Boolean get() = lofiSounds != null
 
+    /** 段階8aのアンビエントの音色デモ（場面を3和音ごとに切り替える）。ピアノはローファイの音源から */
+    fun ambientPreview(sampleRate: Int = MusicConstants.SAMPLE_RATE): SoundEngine = AmbientEngine.preview(lofiSounds, sampleRate)
+
 
     /** デモ再生のシード（曲調ごと。切り替えても同じ台本の続きを同じ曲で鳴らす） */
     fun demoSeed(style: MusicStyle): Int = when (style) {

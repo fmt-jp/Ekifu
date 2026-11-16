@@ -59,6 +59,7 @@ import kotlin.math.roundToInt
 fun PlayerScreen(
     onPlay: () -> Unit,
     onPlayDemo: () -> Unit,
+    onPlayAmbientDemo: () -> Unit,
     onResume: () -> Unit,
     onPause: () -> Unit,
     onStop: () -> Unit,
@@ -141,7 +142,7 @@ fun PlayerScreen(
 
         if (debugVisible) {
             if (active && stream != null && status != null) DebugCard(ui, stream, status, nowMs)
-            DeveloperCard(ui, status, onPlayDemo)
+            DeveloperCard(ui, status, onPlayDemo, onPlayAmbientDemo)
         }
     }
 }
@@ -378,6 +379,7 @@ private fun DeveloperCard(
     ui: PlaybackBus.Ui,
     status: EngineStatus?,
     onPlayDemo: () -> Unit,
+    onPlayAmbientDemo: () -> Unit,
 ) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -387,6 +389,19 @@ private fun DeveloperCard(
             Text("開発用", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
             OutlinedButton(onClick = onPlayDemo, enabled = ui.state == PlaybackBus.State.IDLE) {
                 Text("デモ再生（自宅 → 公園 → 駅 → 職場）")
+            }
+            // 段階8a：アンビエントの音の試聴（場面を3和音ごとに切り替える）
+            OutlinedButton(onClick = onPlayAmbientDemo, enabled = ui.state == PlaybackBus.State.IDLE) {
+                Text("アンビエントの音色デモ")
+            }
+            if (ui.mode == PlaybackMode.AMBIENT_DEMO && ui.state != PlaybackBus.State.IDLE && status != null) {
+                val c = status.composer
+                Text("いまの場面：${c.scene.label}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    "和音 ${c.chordLabel}（${c.beatSec.roundToInt()}秒ごと）・粒 ${"%.2f".format(c.noteProb)}／秒・明るさ ${c.masterCutoffHz.roundToInt()}Hz",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                return@Column
             }
             if (ui.mode == PlaybackMode.OMAKASE || ui.state == PlaybackBus.State.IDLE) return@Column
             DemoScript.COMMUTE.cues.forEach { cue ->
