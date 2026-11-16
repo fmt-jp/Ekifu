@@ -87,14 +87,6 @@ class AmbientTest {
     }
 
     @Test
-    fun previewCyclesTheScenes() {
-        val c = AmbientComposer(1, AmbientEngine.PREVIEW_SCENES)
-        compose(c, 600.0)
-        val seen = (0 until 600 step 3).mapNotNull { c.chordAt(it.toDouble())?.scene }.toSet()
-        assertTrue(seen.containsAll(AmbientEngine.PREVIEW_SCENES.take(5)))
-    }
-
-    @Test
     fun deterministicAcrossChunkingAndCopies() {
         val n = 6 * sr
         val whole = ShortArray(n * 2)
@@ -116,7 +108,7 @@ class AmbientTest {
     fun levelIsReasonableAndDoesNotClip() {
         val n = 40 * sr
         val out = ShortArray(n * 2)
-        AmbientEngine.preview(sounds, sr).render(out, n, 0)
+        AmbientEngine.demo(sounds, 0.0, sr).render(out, n, 0)
         val tail = out.copyOfRange(10 * sr * 2, out.size)
         val clipped = tail.count { abs(it.toInt()) >= 32767 }
         val rms = sqrt(tail.sumOf { (it / 32768.0) * (it / 32768.0) } / tail.size)

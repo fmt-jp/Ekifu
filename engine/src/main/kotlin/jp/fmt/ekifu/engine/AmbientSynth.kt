@@ -39,8 +39,14 @@ data class AmbGrain(override val timeSec: Double, val midi: Int, val gain: Doubl
 /** ピアノ（音源の Grand Piano。音源がなければ粒の音で代わりに鳴らす） */
 data class AmbPiano(override val timeSec: Double, val midi: Int, val velocity: Double, val durSec: Double, val pan: Double) : AmbientEvent
 
-/** 地点のテーマ・到着の合図のベル（試聴と同じ音色） */
-data class AmbBell(override val timeSec: Double, val midi: Int, val gain: Double) : AmbientEvent
+/** 地点のテーマ・到着の合図のベル（試聴と同じ音色）。send は空間への送り（多いほど遠く聞こえる） */
+data class AmbBell(override val timeSec: Double, val midi: Int, val gain: Double, val send: Double = A.BELL_SEND) : AmbientEvent
+
+/**
+ * 和音の切り上げ（地点の判定にすぐ反応する）：この時刻より後に予定していた音を取り消し、
+ * 鳴っているパッドを余韻に入らせる（ドローンはそのまま）
+ */
+data class AmbCut(override val timeSec: Double) : AmbientEvent
 
 /** 全体の明るさ（太陽） */
 data class AmbControl(override val timeSec: Double, val brightnessHz: Double) : AmbientEvent
@@ -59,14 +65,18 @@ class AmbientSynth(
     private class Scheduled(val frame: Long, val order: Long, val event: AmbientEvent)
 
     /** 鳴っている音と定位・空間への送り */
-    private class Playing(val voice: FusionVoice, val l: Double, val r: Double, val send: Double) {
-        fun copy() = Playing(voice.copy(), l, r, send)
+    private class Playing(val voice: FusionVoice, val l: Double, val r: Double, val send: Double, val pad: Boolean = false) {
+        fun copy() = Playing(voice.copy(), l, r, send, pad)
+    }
+
+    private class Bell(val voice: Voice, val send: Double) {
+        fun copy() = Bell(voice.copy(), send)
     }
 
     private var queue = PriorityQueue<Scheduled>(compareBy<Scheduled>({ it.frame }, { it.order }))
     private var order = 0L
     private var playing = ArrayList<Playing>()
-    private var bells = ArrayList<Voice>()
+    private var bells = ArrayList<Bell>()
     private var reverb = FdnReverb(sampleRate, A.REVERB_RT60_SEC)
     private var delay = StereoDelay(sampleRate, A.DELAY_SEC + 0.1, A.DELAY_LOWPASS_HZ, A.DELAY_FEEDBACK).also { it.setDelaySec(A.DELAY_SEC) }
     private var masterL = Biquad(sampleRate, A.brightnessHz(SunLevel.DAY))
@@ -84,6 +94,8 @@ class AmbientSynth(
     fun schedule(events: List<AmbientEvent>) {
         for (e in events) {
             val f = (e.timeSec * sampleRate).roundToLong().coerceAtLeast(frame)
+            // 切り上げ：それより後に予定していた音を取り消す
+            if (e is AmbCut) queue.removeIf { it.frame >= f && it.event !is AmbControl }
             queue += Scheduled(f, order++, e)
         }
     }
@@ -126,12 +138,12 @@ class AmbientSynth(
             }
             k = 0
             while (k < bells.size) {
-                val v = bells[k]
-                val s = v.next()
-                l += s * v.gainL
-                r += s * v.gainR
-                send += s * (A.REVERB_SEND + A.GRAIN_EXTRA_SEND) * v.gain
-                if (v.finished) bells.removeAt(k) else k++
+                val b = bells[k]
+                val s = b.voice.next()
+                l += s * b.voice.gainL
+                r += s * b.voice.gainR
+                send += s * b.send * b.voice.gain
+                if (b.voice.finished) bells.removeAt(k) else k++
             }
             reverb.process(send)
             delay.process(send * A.DELAY_SEND, send * A.DELAY_SEND)
@@ -152,15 +164,15 @@ class AmbientSynth(
         }
     }
 
-    private fun add(v: FusionVoice, pan: Double, send: Double) {
-        playing += Playing(v, panLeft(pan), panRight(pan), send)
+    private fun add(v: FusionVoice, pan: Double, send: Double, pad: Boolean = false) {
+        playing += Playing(v, panLeft(pan), panRight(pan), send, pad)
     }
 
     private fun start(e: AmbientEvent) {
         when (e) {
             is AmbPad -> add(
                 AmbientPadVoice(sampleRate, hz(e.midi), A.PAD_GAIN, e.attackSec, e.durSec, e.cutoffHz, (e.midi % 7) / 7.0),
-                e.pan, A.REVERB_SEND,
+                e.pan, A.REVERB_SEND, pad = true,
             )
             is AmbDrone -> add(DroneVoice(sampleRate, hz(e.midi), A.DRONE_GAIN, e.durSec), 0.0, A.REVERB_SEND * 0.5)
             is AmbGrain -> add(GrainVoice(sampleRate, hz(e.midi), e.gain), e.pan, A.REVERB_SEND + A.GRAIN_EXTRA_SEND)
@@ -173,7 +185,8 @@ class AmbientSynth(
                 }
                 add(v, e.pan, A.REVERB_SEND + A.GRAIN_EXTRA_SEND)
             }
-            is AmbBell -> bells += BellVoice(sampleRate, hz(e.midi), e.gain, 0.0)
+            is AmbBell -> bells += Bell(BellVoice(sampleRate, hz(e.midi), e.gain, 0.0), e.send)
+            is AmbCut -> playing.forEach { if (it.pad) it.voice.release() }
             is AmbControl -> {
                 masterL.setCutoff(e.brightnessHz)
                 masterR.setCutoff(e.brightnessHz)

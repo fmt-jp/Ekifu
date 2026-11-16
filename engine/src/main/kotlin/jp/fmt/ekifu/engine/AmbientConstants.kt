@@ -104,13 +104,48 @@ object AmbientConstants {
     const val COMP_ATTACK_SEC = 0.05
     const val COMP_RELEASE_SEC = 0.8
 
-    // ---- メロディ（段階8aの試聴：場所のモチーフをピアノでゆっくり） ----
+    // ---- 曲の組み立て・登録地点（段階8b） ----
+    /** 地点の判定が来たら、鳴っている和音をこの秒数で切り上げて次の和音（演出）へ */
+    const val REACT_SEC = 1.5
+    /** 区切り（道中20分ごと）：パッドを引いてドローンと粒だけにする和音の数 */
+    const val INTERLUDE_CHORDS = 2
+    /** ベルの空間への送り（ふつう）と、遠くに聞かせるとき */
+    const val BELL_SEND = 0.85
+    const val BELL_FAR_SEND = 1.6
+    /** テーマ・モチーフのベルの音の間（秒） */
+    const val THEME_GAP_SEC = 0.9
+    /** マスが変わったときに場所のモチーフを鳴らすベルの音量 */
+    val MOTIF_BELL_GAIN = db(-16.0)
+    /** 接近：ベルのテーマは遠く（小さく）から始めて、和音ごとにこれだけ近く（大きく）。上限あり */
+    val APPROACH_BELL_START = db(-24.0)
+    const val APPROACH_BELL_STEP_DB = 3.0
+    val APPROACH_BELL_MAX = db(-10.0)
+    /** 接近：この数の和音のあとからピアノもテーマを弾く */
+    const val APPROACH_PIANO_FROM = 2
+    /** 到着：合図の和音の長さ（パッドを引いてベルの3音）、テーマの和音、着地の和音（和音の長さの倍率） */
+    const val ARRIVE_CUE_SEC = 4.0
+    const val ARRIVE_LAND_FACTOR = 1.6
+    /** 到着の合図：ベルの上りの3音（F・A・C）と間 */
+    val ARRIVAL_CHIME_MIDI = intArrayOf(77, 81, 84)
+    const val ARRIVAL_CHIME_GAP_SEC = 0.35
+    val ARRIVAL_CHIME_GAIN = db(-6.0)
+    val ARRIVE_BELL_GAIN = db(-9.0)
+    /** 着地の和音は音を足して大きく広げる */
+    const val LAND_PAD_EXTRA = 1
+    /** 滞在：粒を減らす割合、ベルでテーマを静かに鳴らす間隔（和音の数。到着直後の和音は鳴らさない） */
+    const val STAY_GRAIN_FACTOR = 0.35
+    const val STAY_BELL_EVERY_CHORDS = 3
+    val STAY_BELL_GAIN = db(-20.0)
+    /** 離れる：テーマを遠ざかるように（1音ごとにこれだけ小さく） */
+    val LEAVE_BELL_GAIN = db(-12.0)
+    const val LEAVE_FADE_DB_PER_NOTE = 4.0
+
+    // ---- メロディ（場所のモチーフをピアノでゆっくり） ----
     /** モチーフの音の間（秒） */
     const val PIANO_NOTE_GAP_SEC = 1.4
     /** 何和音ごとにピアノを弾くか */
     const val PIANO_EVERY_CHORDS = 2
 
-    /** 試聴（音色デモ）のシードと、1つの場面を鳴らす和音の数 */
+    /** デモ再生のシード */
     const val DEMO_SEED = 20_261_116
-    const val PREVIEW_CHORDS_PER_SCENE = 3
 }

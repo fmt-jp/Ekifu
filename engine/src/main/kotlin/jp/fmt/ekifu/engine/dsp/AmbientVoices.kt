@@ -27,6 +27,10 @@ private class Swell(sampleRate: Int, attackSec: Double, releaseSec: Double, priv
         return level
     }
 
+    fun release() {
+        releasing = true
+    }
+
     fun copyInto(o: Swell) {
         o.level = level
         o.releasing = releasing
@@ -75,6 +79,11 @@ class AmbientPadVoice(
         val out = filter.process(s) * env.next() * gain
         if (env.done) finished = true
         return out
+    }
+
+    /** 余韻に入らせる（和音の切り上げ） */
+    override fun release() {
+        env.release()
     }
 
     override fun copy() = AmbientPadVoice(sampleRate, freq, gain, attackSec, durSec, cutoffHz, lfoPhase0).also {

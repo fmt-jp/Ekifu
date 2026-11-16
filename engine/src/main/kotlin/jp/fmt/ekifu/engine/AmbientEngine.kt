@@ -12,16 +12,25 @@ import jp.fmt.ekifu.engine.MusicConstants as C
 class AmbientEngine private constructor(
     private var composer: AmbientComposer,
     private var synth: AmbientSynth,
+    private val script: DemoScript?,
     override val sampleRate: Int,
+    /** デモ台本のどこから始めたか（曲調の切り替えで続きから鳴らすとき） */
+    private val scriptStartSec: Double,
     private val sounds: BandSounds?,
 ) : SoundEngine {
 
     constructor(
         seed: Int,
         sounds: BandSounds?,
-        previewScenes: List<Scene>? = null,
+        config: AmbientComposerConfig = AmbientComposerConfig(),
+        script: DemoScript? = null,
         sampleRate: Int = C.SAMPLE_RATE,
-    ) : this(AmbientComposer(seed, previewScenes), AmbientSynth(sampleRate, sounds), sampleRate, sounds)
+        scriptStartSec: Double = 0.0,
+    ) : this(AmbientComposer(seed, config), AmbientSynth(sampleRate, sounds), script, sampleRate, scriptStartSec, sounds)
+
+    // それより前の台本は引き継いだ状態（CarryOver）として反映済み
+    private var cueIndex = script?.firstCueAfter(scriptStartSec) ?: 0
+    private var currentCue: DemoCue? = script?.cueAt(scriptStartSec)
 
     override val frame: Long get() = synth.frame
 
@@ -35,16 +44,30 @@ class AmbientEngine private constructor(
             // 作曲の先読みの区切りをフレーム位置で固定し、分け方によらず同じ結果にする
             val toBlockEnd = C.RENDER_BLOCK_FRAMES - (synth.frame % C.RENDER_BLOCK_FRAMES).toInt()
             val n = minOf(frames - done, toBlockEnd)
-            if (synth.frame % C.RENDER_BLOCK_FRAMES == 0L) {
-                val blockEnd = elapsedSec + C.RENDER_BLOCK_FRAMES.toDouble() / sampleRate
-                synth.schedule(composer.composeUntil(blockEnd + C.COMPOSE_LOOKAHEAD_SEC))
-            }
+            if (synth.frame % C.RENDER_BLOCK_FRAMES == 0L) beginBlock()
             synth.render(out, n, offsetFrames + done)
             done += n
         }
     }
 
-    override fun copy(): AmbientEngine = AmbientEngine(composer.copy(), synth.copy(), sampleRate, sounds)
+    private fun beginBlock() {
+        val now = elapsedSec
+        script?.let { s ->
+            while (cueIndex < s.cues.size && s.cues[cueIndex].atSec <= now + scriptStartSec) {
+                val cue = s.cues[cueIndex++]
+                cue.action(composer)
+                composer.react(now)
+                currentCue = cue
+            }
+        }
+        val blockEnd = now + C.RENDER_BLOCK_FRAMES.toDouble() / sampleRate
+        synth.schedule(composer.composeUntil(blockEnd + C.COMPOSE_LOOKAHEAD_SEC))
+    }
+
+    override fun copy(): AmbientEngine = AmbientEngine(composer.copy(), synth.copy(), script, sampleRate, scriptStartSec, sounds).also {
+        it.cueIndex = cueIndex
+        it.currentCue = currentCue
+    }
 
     override fun status(): EngineStatus {
         val t = elapsedSec
@@ -53,24 +76,29 @@ class AmbientEngine private constructor(
         return EngineStatus(
             elapsedSec = t,
             composer = ComposerStatus(
-                phase = Phase.JOURNEY,
+                phase = c?.phase ?: Phase.START,
                 chord = null,
                 chordLabel = c?.chord?.name ?: "—",
                 beatSec = c?.durSec ?: A.chordSec(scene.speed),
                 noteProb = A.grainsPerSec(scene.speed),
                 masterCutoffHz = c?.brightnessHz ?: A.brightnessHz(scene.sun),
                 scene = scene,
-                place = null,
+                place = c?.place,
                 gridStartSec = c?.startSec,
+                arrival = c?.arrival,
             ),
-            demoCue = null,
+            demoCue = currentCue,
             activeVoices = synth.activeVoices,
             stopping = false,
             finished = false,
         )
     }
 
-    override fun apply(action: (ComposerInput) -> Unit) = action(composer)
+    /** 入力を作曲に渡す。地点の判定なら鳴っている和音を切り上げて、数秒で次の和音（演出）へ */
+    override fun apply(action: (ComposerInput) -> Unit) {
+        action(composer)
+        composer.react(elapsedSec)
+    }
 
     /** 終わり：主和音（Fadd9）とドローンを伸ばして約12秒でフェードアウト */
     override fun endingRenderer(status: EngineStatus, nowSec: Double): Renderer =
@@ -97,21 +125,14 @@ class AmbientEngine private constructor(
     }
 
     companion object {
-        /**
-         * 段階8aの音色デモ：場面を3和音ごとに順に切り替えて、速さ・太陽・なじみ度による違いを聞き比べる
-         * （歩き・昼 → 静止・昼 → 乗り物・昼 → 歩き・薄明 → 歩き・夜 → なじみ → 初めて）
-         */
-        val PREVIEW_SCENES = listOf(
-            Scene("xn76ur", Speed.WALK, Familiarity.NORMAL, SunLevel.DAY),
-            Scene("xn76ur", Speed.STILL, Familiarity.NORMAL, SunLevel.DAY),
-            Scene("xn76fv", Speed.VEHICLE, Familiarity.NORMAL, SunLevel.DAY),
-            Scene("xn76fv", Speed.WALK, Familiarity.NORMAL, SunLevel.TWILIGHT),
-            Scene("xn77h0", Speed.WALK, Familiarity.NORMAL, SunLevel.NIGHT),
-            Scene("xn77h0", Speed.WALK, Familiarity.FAMILIAR, SunLevel.DAY),
-            Scene("xn7e2t", Speed.WALK, Familiarity.NEW, SunLevel.DAY),
+        /** デモ再生（ほかの曲調と同じ台本：自宅 → 公園 → 駅 → 職場）。区切りは道中2分ごと */
+        fun demo(sounds: BandSounds?, scriptStartSec: Double = 0.0, sampleRate: Int = C.SAMPLE_RATE) = AmbientEngine(
+            A.DEMO_SEED,
+            sounds,
+            AmbientComposerConfig(interludeEverySec = C.DEMO_INTERLUDE_EVERY_SEC),
+            DemoScript.COMMUTE,
+            sampleRate,
+            scriptStartSec,
         )
-
-        fun preview(sounds: BandSounds?, sampleRate: Int = C.SAMPLE_RATE) =
-            AmbientEngine(A.DEMO_SEED, sounds, PREVIEW_SCENES, sampleRate)
     }
 }
