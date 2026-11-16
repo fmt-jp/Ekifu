@@ -109,6 +109,12 @@ object LofiConstants {
     val CRACKLE_GAIN = db(-33.0)
     const val CRACKLE_DECAY_SEC = 0.0015
 
+    /**
+     * 全体の音量の持ち上げ（ユーザーの要望：ほかの曲調より約8dB小さかったため、癒し・フュージョンと同じくらいに）。
+     * 最後の出力にかける（測ってみて音割れはなかった）
+     */
+    val OUTPUT_BOOST = db(8.0)
+
     // ---- 空間 ----
     /** ディレイは控えめ（付点8分・フィードバック少なめ） */
     const val DELAY_STEPS = 3

@@ -15,8 +15,8 @@ android {
         applicationId = "jp.fmt.ekifu"
         minSdk = 26
         targetSdk = 35
-        versionCode = 29
-        versionName = "0.13.0-ambient8a"
+        versionCode = 30
+        versionName = "0.13.1-ambient8a"
     }
 
     signingConfigs {

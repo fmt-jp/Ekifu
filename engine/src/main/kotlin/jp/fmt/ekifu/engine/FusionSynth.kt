@@ -91,6 +91,8 @@ class FusionSynth(
     )
     private var limiter = Limiter(sampleRate)
     private var lofiFx: LofiFx? = if (lofi) LofiFx(sampleRate, noiseSeed) else null
+    /** ローファイはほかの曲調より小さく聞こえるので全体を持ち上げる */
+    private val outputBoost = if (lofi) LofiConstants.OUTPUT_BOOST else 1.0
 
     private var fade = 1.0
     private var fadeStep = 0.0
@@ -219,7 +221,7 @@ class FusionSynth(
             l *= cg
             r *= cg
             val lg = limiter.gainFor(l, r)
-            val g = lg * fade * F.OUTPUT_GAIN
+            val g = lg * fade * F.OUTPUT_GAIN * outputBoost
             if (fadeStep > 0) fade = (fade - fadeStep).coerceAtLeast(0.0)
 
             val o = (offsetFrames + i) * 2
