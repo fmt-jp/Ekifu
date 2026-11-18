@@ -77,7 +77,7 @@ object LofiHarmony {
  * そのため、場面と登録地点の入力は次の小節から音に出る（8小節のブロックの途中でも新しいブロックを始める）。
  *
  * - 始まり：こもった音で和音とベースだけ4小節（レコードをかけたような入り）→ ドラムが入って道中へ
- * - 道中：跳ねたブーンバップ。ブロックの前半4小節は場所のモチーフを元にピアノが即興で弾き、後半は休む
+ * - 道中：跳ねたブーンバップ。ブロックの頭6小節は場所のモチーフを元にピアノが即興で弾き、残り2小節は休む
  * - 区切り：道中が続いたら、音をこもらせてドラムを抜く4小節
  * - 接近：毎ブロックの頭でピアノが地点のテーマをそのまま弾き、ベルでも重ねる。外側の円に入った最初のブロックは
  *   2小節ドラムを止めてベルでテーマを大きく2回、最後の拍のスネアでバンドが戻る
@@ -577,7 +577,7 @@ class LofiComposer(seed: Int, private val config: LofiComposerConfig = LofiCompo
     }
 
     /**
-     * 道中のメロディ：ブロックの前半4小節。1小節目は元のモチーフ、2小節目は短い答え、
+     * 道中のメロディ：ブロックの頭6小節（5・6小節目は変形と落ち着きをもう一度）。1小節目は元のモチーフ、2小節目は短い答え、
      * 3小節目は音階をずらした変形、4小節目は和音の音に落ち着いて伸ばす。
      * 静止・なじみの場所は音を減らし、初めての場所は少し増やす
      */
@@ -586,7 +586,9 @@ class LofiComposer(seed: Int, private val config: LofiComposerConfig = LofiCompo
         val pool = Scale.pentatonic(MELODY_MIN, MELODY_MAX)
         val quiet = scene.speed == Speed.STILL || scene.familiarity == Familiarity.FAMILIAR
         val busy = scene.familiarity == Familiarity.NEW
-        val k = blockBar % L.MELODY_BARS
+        // 0：モチーフ・1：答え・2：変形・3：落ち着く。5・6小節目（4・5）は変形と落ち着きをもう一度
+        val k0 = blockBar % L.MELODY_BARS
+        val k = if (k0 >= 4) k0 - 2 else k0
         if (quiet && k % 2 == 1) return
         val notes: List<Int> = when (k) {
             0 -> motif

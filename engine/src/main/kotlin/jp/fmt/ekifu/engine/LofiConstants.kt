@@ -30,7 +30,8 @@ object LofiConstants {
             DrumKind.RIM to 37,
         ),
         leadGain = db(0.0),
-        keysGain = db(0.0),
+        // エレピは試聴で2回調整（＋4dB → ユーザーの要望で −2dB して ＋2dB）
+        keysGain = db(-2.0),
         bassGain = db(0.0),
         drumGains = mapOf(
             DrumKind.KICK to db(-2.0), DrumKind.SNARE to db(-9.0), DrumKind.HAT to db(-14.0),
@@ -131,8 +132,11 @@ object LofiConstants {
     const val MUFFLED_CUTOFF_HZ = 1100.0
     /** 外側の円に入った最初のブロック：ドラムを止めてベルでテーマを鳴らす小節数 */
     const val ENTRY_BREAK_BARS = 2
-    /** 道中のメロディ：ブロックの前半この小節数だけ弾き、後半は休む */
-    const val MELODY_BARS = 4
+    /**
+     * 道中のメロディ：8小節のブロックのうち頭からこの小節数だけ弾き、残りは休む
+     * （ユーザーの要望で4→6小節に増やした。5・6小節目はもう一度変形して落ち着く）
+     */
+    const val MELODY_BARS = 6
     /** メロディの強さ */
     const val MELODY_VELOCITY = 0.62
     /** 地点のテーマをピアノで弾く強さ */
